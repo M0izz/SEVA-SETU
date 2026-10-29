@@ -8,11 +8,15 @@ dash = Blueprint("dash", __name__)
 
 
 def mask_pii_text(text: str) -> str:
-    """Mask mobile numbers, bank accounts, tokens, and OTPs in text."""
+    """Mask mobile numbers, bank accounts, tokens, credentials, and OTPs in text."""
     if not isinstance(text, str):
         return text
-    # Mask 10-digit Indian mobile numbers: e.g. 9864012345 -> 98640XXXXX
-    text = re.sub(r"(?<!\d)([6-9]\d{4})(\d{5})(?!\d)", r"\1XXXXX", text)
+
+    # Mask 10-digit Indian mobile numbers (including optional country code and spaces): e.g. 9864012345 -> 98640XXXXX
+    text = re.sub(r"(?<!\d)(?:\+?91[\s-]?)?([6-9]\d{4})[\s-]?(\d{5})(?!\d)", r"\1XXXXX", text)
+
+    # Mask 12-digit Aadhaar numbers: e.g. 1234 5678 9012 -> 1234 XXXX 9012
+    text = re.sub(r"\b(\d{4})[\s-](\d{4})[\s-](\d{4})\b", r"\1 XXXX \3", text)
 
     # Mask bank accounts (9 to 18 digits): e.g. 3188021045678 -> 31XXXXXX5678
     def _mask_bank(match):
@@ -22,11 +26,23 @@ def mask_pii_text(text: str) -> str:
             return val[:2] + "XXXXXX" + val[-4:]
         return val
     text = re.sub(r"\b\d{9,18}\b", _mask_bank, text)
+
     # Mask OTP occurrences
     text = re.sub(r"(?i)\b(otp\s*(?:is|:|=)\s*)(\d{6})\b", r"\1XXXXXX", text)
-    # Mask Bearer tokens / JWTs
-    text = re.sub(r"Bearer\s+eyJ[A-Za-z0-9-_.]+", "Bearer [MASKED_TOKEN]", text)
+
+    # Mask Bearer tokens (any format)
+    text = re.sub(r"(?i)Bearer\s+[A-Za-z0-9\-_.~+/]+=*", "Bearer [MASKED_TOKEN]", text)
+
+    # Mask standalone JWTs
     text = re.sub(r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b", "[MASKED_JWT_TOKEN]", text)
+
+    # Mask API keys (e.g. sk-...)
+    text = re.sub(r"\bsk-[A-Za-z0-9_\-]{20,}\b", "[MASKED_API_KEY]", text)
+
+    # Mask sensitive credential keys in JSON / log text
+    text = re.sub(r'(?i)(["\']?(?:password|secret|api_key|token)["\']?\s*[:=]\s*["\'])([^"\'\s]+)(["\'])',
+                  r'\1[MASKED_CREDENTIAL]\3', text)
+
     return text
 
 

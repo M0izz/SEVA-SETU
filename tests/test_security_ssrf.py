@@ -170,7 +170,7 @@ def test_ssrf_dns_rebinding_pins_transport():
     unresolvable_url = f"http://rebinding-attacker-fake-domain.test:{server_port}/doc.pdf"
 
     # In eval/test mode, ALLOWED_DOC_HOSTS allows our test server port
-    with patch.dict("os.environ", {"ALLOWED_DOC_HOSTS": f"127.0.0.1:{server_port},rebinding-attacker-fake-domain.test:{server_port}"}):
+    with patch.dict("os.environ", {"ALLOWED_DOC_HOSTS": f"127.0.0.1:{server_port},rebinding-attacker-fake-domain.test:{server_port}", "ALLOW_TEST_DOC_SERVERS": "1"}):
         with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("127.0.0.1", server_port))]):
             content, err = api_module._validate_and_fetch_url(unresolvable_url)
 
@@ -209,5 +209,61 @@ def test_ssrf_rejects_mixed_public_and_private_dns_answers():
         content, err = api_module._validate_and_fetch_url("http://mixed-dns.attacker.com/proof.pdf")
         assert content is None
         assert "private, loopback, link-local, or internal IP" in err
+
+
+def test_ssrf_rejects_cgnat_and_documentation_ips():
+    """Non-global IPs such as CGNAT (100.64.0.0/10) and documentation IPs must be rejected."""
+    prohibited_ips = ["100.64.0.1", "192.0.2.1", "198.51.100.1", "203.0.113.1", "198.18.0.1"]
+    for ip in prohibited_ips:
+        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", (ip, 80))]):
+            content, err = api_module._validate_and_fetch_url(f"http://test-{ip.replace('.', '-')}.example.com/doc.pdf")
+            assert content is None
+            assert "private, loopback, link-local, or internal IP" in err
+
+
+def test_ssrf_rejects_unusual_ip_encodings():
+    """Unusual IP encodings (octal, hex, dword, dotted-short) must be canonicalized and rejected."""
+    unusual_urls = [
+        "http://0177.0.0.1/doc.pdf",     # Octal loopback
+        "http://2130706433/doc.pdf",     # Dword loopback
+        "http://0x7f000001/doc.pdf",     # Hex loopback
+        "http://127.1/doc.pdf",          # Short-dotted loopback
+    ]
+    for url in unusual_urls:
+        content, err = api_module._validate_and_fetch_url(url)
+        assert content is None
+        assert "internal" in err or "private" in err
+
+
+def test_ssrf_rejects_trailing_dot_internal_hosts():
+    """Hostnames with trailing dots like 'localhost.' must still be caught as internal."""
+    for url in ["http://localhost./doc.pdf", "http://127.0.0.1./doc.pdf"]:
+        content, err = api_module._validate_and_fetch_url(url)
+        assert content is None
+        assert "internal" in err or "private" in err or "could not be resolved" in err
+
+
+def test_ssrf_rejects_oversized_content_length_header():
+    """A response advertising Content-Length > 5MB must be aborted before streaming body."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.headers = {"Content-Length": "10485760"}  # 10 MB
+    with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("93.184.216.34", 80))]):
+        with patch("requests.Session.get", return_value=mock_resp):
+            content, err = api_module._validate_and_fetch_url("http://example.com/giant.pdf")
+            assert content is None
+            assert "file is larger than 5 MB" in err
+            mock_resp.close.assert_called()
+
+
+def test_ssrf_allowlist_in_production_cannot_authorize_private_destinations():
+    """In production mode, an allowlisted hostname that resolves to a private IP must STILL be rejected."""
+    # os.environ["ALLOWED_DOC_HOSTS"] set, but ALLOW_TEST_DOC_SERVERS is NOT set
+    with patch.dict("os.environ", {"ALLOWED_DOC_HOSTS": "trusted-portal.gov.in"}, clear=False):
+        # Even if allowlisted, DNS resolves to private IP
+        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("10.0.0.99", 80))]):
+            content, err = api_module._validate_and_fetch_url("http://trusted-portal.gov.in/doc.pdf")
+            assert content is None
+            assert "private, loopback, link-local, or internal IP" in err
 
 

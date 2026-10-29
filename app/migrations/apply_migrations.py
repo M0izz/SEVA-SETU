@@ -66,30 +66,36 @@ def run_migrations():
     cur.execute("SELECT version FROM schema_migrations")
     applied = {r[0] for r in cur.fetchall()}
 
-    # Migration 001
-    if "001_active_unique" not in applied:
-        print("[MIGRATION] Running migration 001_active_unique...")
-        if not check_preflight_001(cur):
-            cur.close(); conn.close()
-            return False
-        sql_001 = (MIGRATIONS_DIR / "001_active_unique.sql").read_text(encoding="utf-8")
-        cur.execute(sql_001)
-        cur.execute("INSERT INTO schema_migrations (version) VALUES ('001_active_unique')")
-        conn.commit()
-        print("[MIGRATION] Migration 001_active_unique applied successfully.")
-    else:
-        print("[MIGRATION] Migration 001_active_unique already applied.")
+    try:
+        # Migration 001
+        if "001_active_unique" not in applied:
+            print("[MIGRATION] Running migration 001_active_unique...")
+            if not check_preflight_001(cur):
+                cur.close(); conn.close()
+                return False
+            sql_001 = (MIGRATIONS_DIR / "001_active_unique.sql").read_text(encoding="utf-8")
+            cur.execute(sql_001)
+            cur.execute("INSERT INTO schema_migrations (version) VALUES ('001_active_unique')")
+            conn.commit()
+            print("[MIGRATION] Migration 001_active_unique applied successfully.")
+        else:
+            print("[MIGRATION] Migration 001_active_unique already applied.")
 
-    # Migration 002
-    if "002_officer_blocks" not in applied:
-        print("[MIGRATION] Running migration 002_officer_blocks...")
-        sql_002 = (MIGRATIONS_DIR / "002_officer_blocks.sql").read_text(encoding="utf-8")
-        cur.execute(sql_002)
-        cur.execute("INSERT INTO schema_migrations (version) VALUES ('002_officer_blocks')")
-        conn.commit()
-        print("[MIGRATION] Migration 002_officer_blocks applied successfully.")
-    else:
-        print("[MIGRATION] Migration 002_officer_blocks already applied.")
+        # Migration 002
+        if "002_officer_blocks" not in applied:
+            print("[MIGRATION] Running migration 002_officer_blocks...")
+            sql_002 = (MIGRATIONS_DIR / "002_officer_blocks.sql").read_text(encoding="utf-8")
+            cur.execute(sql_002)
+            cur.execute("INSERT INTO schema_migrations (version) VALUES ('002_officer_blocks')")
+            conn.commit()
+            print("[MIGRATION] Migration 002_officer_blocks applied successfully.")
+        else:
+            print("[MIGRATION] Migration 002_officer_blocks already applied.")
+    except Exception as e:
+        conn.rollback()
+        print(f"[MIGRATION] Migration execution failed, transaction rolled back safely: {e}")
+        cur.close(); conn.close()
+        return False
 
     cur.close(); conn.close()
     print("[MIGRATION] All database migrations are up to date.")

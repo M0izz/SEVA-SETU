@@ -142,6 +142,9 @@ def _authenticate(role):
         return None, (jsonify({"error": "invalid_token",
                                "detail": "token must be issued by this portal for "
                                          "audience " + _mcp_audience(role)}), 401)
+    if claims.get("kind") not in (None, "access"):
+        return None, (jsonify({"error": "invalid_token",
+                               "detail": "token must be an access token"}), 401)
     if claims.get("role") != role or claims.get("scope") != role:
         return None, (jsonify({"error": "insufficient_scope",
                                "detail": "this endpoint needs the %r role" % role}), 403)
@@ -236,7 +239,7 @@ def _is_safe_ip(ip_str: str) -> bool:
         if ip.version == 6 and ip.ipv4_mapped:
             ip = ip.ipv4_mapped
         if (ip.is_private or ip.is_loopback or ip.is_link_local or
-                ip.is_multicast or ip.is_reserved or ip.is_unspecified):
+                ip.is_multicast or ip.is_reserved or ip.is_unspecified or not ip.is_global):
             return False
         if str(ip) in ("169.254.169.254", "fd00:ec2::254"):
             return False
@@ -273,16 +276,35 @@ def _validate_and_fetch_url(url: str) -> tuple[bytes | None, str | None]:
     if not hostname:
         return None, "URL must include a valid hostname"
 
-    hostname_clean = hostname.lower().strip("[]")
+    # Strip square brackets, trailing dots, and normalize casing
+    hostname_clean = hostname.lower().strip("[]").rstrip(".")
+
+    # Canonicalize IDN (Punycode) to prevent unicode confusables
+    try:
+        hostname_clean = hostname_clean.encode("idna").decode("ascii")
+    except Exception:
+        return None, "malformed hostname encoding"
+
+    # Canonicalize and reject unusual IPv4 representations (octal, hex, dword, short-dotted)
+    try:
+        canon_ip = socket.inet_ntoa(socket.inet_aton(hostname_clean))
+        if not _is_safe_ip(canon_ip):
+            return None, "access to private, loopback, link-local, or internal IP addresses is prohibited"
+        hostname_clean = canon_ip
+    except Exception:
+        pass
+
     port = parsed.port or (443 if scheme == "https" else 80)
 
-    # Check evaluation bypass (only active when ALLOWED_DOC_HOSTS is explicitly configured)
-    is_eval_allowed = _is_allowed_eval_host(hostname_clean, port)
+    # Internal services and cloud metadata are unconditionally prohibited
+    if hostname_clean in BLOCKED_INTERNAL_HOSTS or hostname_clean.endswith((".local", ".internal", ".localhost")):
+        return None, "access to internal network addresses or services is prohibited"
+
+    # Check evaluation bypass (only active when ALLOWED_DOC_HOSTS is set AND in explicit test mode)
+    is_test_env = os.environ.get("ALLOW_TEST_DOC_SERVERS") == "1" or (getattr(portal, "app", None) and portal.app.config.get("TESTING"))
+    is_eval_allowed = is_test_env and _is_allowed_eval_host(hostname_clean, port)
 
     if not is_eval_allowed:
-        if hostname_clean in BLOCKED_INTERNAL_HOSTS or hostname_clean.endswith((".local", ".internal", ".localhost")):
-            return None, "access to internal network addresses or services is prohibited"
-
         if port not in (80, 443, 8080, 8443):
             return None, "non-standard destination ports are prohibited"
 
@@ -301,16 +323,31 @@ def _validate_and_fetch_url(url: str) -> tuple[bytes | None, str | None]:
 
         validated_ip = addr_info[0][4][0]
     else:
-        # Evaluation bypass (only active when ALLOWED_DOC_HOSTS is explicitly configured)
+        # Controlled local test harness mode (only allows mock doc server; still bans cloud metadata and non-loopback private networks)
         try:
             addr_info = socket.getaddrinfo(hostname_clean, port, type=socket.SOCK_STREAM)
+            if not addr_info:
+                return None, "could not resolve destination host"
+            for addr in addr_info:
+                ip_str = addr[4][0]
+                if ip_str in ("169.254.169.254", "fd00:ec2::254"):
+                    return None, "access to cloud metadata is prohibited"
+                try:
+                    ip_obj = ipaddress.ip_address(ip_str)
+                    if not ip_obj.is_loopback and not _is_safe_ip(ip_str):
+                        return None, "access to private, loopback, link-local, or internal IP addresses is prohibited"
+                except ValueError:
+                    return None, "invalid destination address"
             validated_ip = addr_info[0][4][0]
+        except socket.gaierror:
+            return None, "destination host could not be resolved"
         except Exception:
             validated_ip = hostname_clean
 
     # Enforce transport-level IP pinning to eliminate DNS rebinding TOCTOU
     session = http.Session()
-    adapter = PinnedIPAdapter(validated_ip)
+    session.trust_env = False  # Ignore HTTP_PROXY and environment proxies to prevent bypasses
+    adapter = PinnedIPAdapter(validated_ip, max_retries=0)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
 
@@ -328,11 +365,20 @@ def _validate_and_fetch_url(url: str) -> tuple[bytes | None, str | None]:
     finally:
         session.close()
 
-    if r.status_code in (301, 302, 303, 307, 308):
+    if r.status_code in (301, 302, 303, 307, 308) or (getattr(r, "is_redirect", False) is True):
+        r.close()
         return None, "URL redirects are not permitted for security reasons"
 
     if r.status_code != 200:
+        r.close()
         return None, "age_proof url returned HTTP %d" % r.status_code
+
+    # Pre-check Content-Length header to prevent oversized downloads
+    content_length = r.headers.get("Content-Length")
+    if content_length and content_length.isdigit():
+        if int(content_length) > MAX_DOC_BYTES:
+            r.close()
+            return None, "file is larger than 5 MB"
 
     chunks = []
     total = 0
@@ -342,9 +388,13 @@ def _validate_and_fetch_url(url: str) -> tuple[bytes | None, str | None]:
                 chunks.append(chunk)
                 total += len(chunk)
                 if total > MAX_DOC_BYTES:
+                    r.close()
                     return None, "file is larger than 5 MB"
     except Exception:
+        r.close()
         return None, "connection interrupted while reading file"
+    finally:
+        r.close()
 
     return b"".join(chunks), None
 
