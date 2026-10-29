@@ -1,0 +1,321 @@
+{
+  "_comment": "The citizens and officers invented for the Sewa Setu agent evals. Each one is a specific persona: name, age, village, voice, objective, and assertions that MUST hold in the portal Postgres database afterwards. Agent pilot blocks: Sonari, Namti.",
+  "citizens": [
+    {
+      "id": "P1-rima",
+      "name": "Rima Bora",
+      "age": 70,
+      "village": "Lakhipur",
+      "block": "Sonari",
+      "mobile": "9864012345",
+      "voice": "Simple conversational sentences, polite, asks assistant to assist like her grandson would",
+      "goal": "Apply for the old age pension with her grandson assisting over the phone",
+      "goal_short": "fresh eligible pension application",
+      "dob": "05/03/1956",
+      "gender": "Female",
+      "marital_status": "Widowed",
+      "husband_name": "",
+      "bank_account": "3188021045678",
+      "ifsc": "SBIN0003077",
+      "turns": [
+        "Namaste. Mera naam Rima Bora hai. Sonari block ke Lakhipur gaon me rehti hoon. Meri umar 70 saal hai. Mujhe old age pension ke liye apply karna hai.",
+        "Meri date of birth 05/03/1956 hai. Widowed hoon. Bank account 3188021045678, IFSC SBIN0003077. Age certificate document ready hai."
+      ],
+      "steps": [
+        {"tool": "check_eligibility", "args": {"date_of_birth": "05/03/1956"}},
+        {"tool": "apply_for_pension", "args": {"full_name": "Rima Bora", "date_of_birth": "05/03/1956", "gender": "Female", "marital_status": "Widowed", "village": "Lakhipur", "block": "Sonari", "bank_account": "3188021045678", "ifsc": "SBIN0003077", "age_proof_url": "http://127.0.0.1:9099/rima_bora_ageproof.pdf"}}
+      ],
+      "expected_db_human": "one new PENDING application for mobile 9864012345: applicant Rima Bora, village Lakhipur, block Sonari, bank 3188021045678, IFSC SBIN0003077, age-proof document stored, SUBMIT audit log created",
+      "assertions": [
+        {"what": "exactly one application exists for her mobile", "sql": "SELECT count(*) FROM applications WHERE mobile = :m", "params": {"m": "9864012345"}, "op": "eq", "expect": 1},
+        {"what": "its status is PENDING", "sql": "SELECT status FROM applications WHERE mobile = :m", "params": {"m": "9864012345"}, "op": "eq", "expect": "PENDING"},
+        {"what": "applicant name recorded correctly", "sql": "SELECT applicant_name FROM applications WHERE mobile = :m", "params": {"m": "9864012345"}, "op": "eq", "expect": "Rima Bora"},
+        {"what": "village and block recorded as stated", "sql": "SELECT village || '|' || block FROM applications WHERE mobile = :m", "params": {"m": "9864012345"}, "op": "eq", "expect": "Lakhipur|Sonari"},
+        {"what": "bank details stored accurately", "sql": "SELECT bank_account || '|' || ifsc FROM applications WHERE mobile = :m", "params": {"m": "9864012345"}, "op": "eq", "expect": "3188021045678|SBIN0003077"},
+        {"what": "age-proof document was saved in portal upload directory", "sql": "SELECT doc_path FROM applications WHERE mobile = :m", "params": {"m": "9864012345"}, "op": "nonempty"},
+        {"what": "SUBMIT action written to audit trail", "sql": "SELECT count(*) FROM audit_log a JOIN applications p ON p.id = a.application_id WHERE p.mobile = :m AND a.action = 'SUBMIT'", "params": {"m": "9864012345"}, "op": "ge", "expect": 1}
+      ]
+    },
+    {
+      "id": "P2-anil",
+      "name": "Anil Das",
+      "age": 63,
+      "village": "Namti Chariali",
+      "block": "Namti",
+      "mobile": "6381693382",
+      "voice": "Quiet, careful, double-checks eligibility after previous rejection",
+      "goal": "Apply again after his previous application was rejected — now residing in Namti pilot block",
+      "goal_short": "re-apply after previous rejection",
+      "dob": "12/08/1963",
+      "gender": "Male",
+      "marital_status": "Married",
+      "husband_name": "",
+      "bank_account": "9130200554433",
+      "ifsc": "UTBI0002819",
+      "turns": [
+        "Hello. Anil Das here. Last year my pension application was rejected. Now I have moved to Namti Chariali in Namti block. I am 63. Can I apply again?",
+        "DOB is 12/08/1963. Married. Account 9130200554433, IFSC UTBI0002819. Age certificate is ready."
+      ],
+      "steps": [
+        {"tool": "check_eligibility", "args": {"date_of_birth": "12/08/1963"}},
+        {"tool": "apply_for_pension", "args": {"full_name": "Anil Das", "date_of_birth": "12/08/1963", "gender": "Male", "marital_status": "Married", "village": "Namti Chariali", "block": "Namti", "bank_account": "9130200554433", "ifsc": "UTBI0002819", "age_proof_url": "http://127.0.0.1:9099/anil_das_ageproof.pdf"}}
+      ],
+      "expected_db_human": "his previous REJECTED application remains intact, and a new PENDING application is created for the same mobile in Namti block",
+      "assertions": [
+        {"what": "previous application is still REJECTED", "sql": "SELECT count(*) FROM applications WHERE mobile = :m AND status = 'REJECTED'", "params": {"m": "6381693382"}, "op": "ge", "expect": 1},
+        {"what": "a new PENDING application exists", "sql": "SELECT count(*) FROM applications WHERE mobile = :m AND status = 'PENDING'", "params": {"m": "6381693382"}, "op": "eq", "expect": 1},
+        {"what": "the new one records Anil Das in Namti block", "sql": "SELECT applicant_name || '|' || block FROM applications WHERE mobile = :m AND status = 'PENDING'", "params": {"m": "6381693382"}, "op": "eq", "expect": "Anil Das|Namti"}
+      ]
+    },
+    {
+      "id": "P3-sunita",
+      "name": "Sunita Karmakar",
+      "age": 58,
+      "village": "Sialmari",
+      "block": "Sonari",
+      "mobile": "9864023456",
+      "voice": "Hopeful, insists that neighbors said she qualifies",
+      "goal": "Wants pension even though she is 58 years old (below statutory age 60)",
+      "goal_short": "underage applicant (58) must be refused",
+      "dob": "20/11/1968",
+      "gender": "Female",
+      "marital_status": "Married",
+      "husband_name": "Rana Karmakar",
+      "bank_account": "2011045567789",
+      "ifsc": "SBIN0003077",
+      "turns": [
+        "Namaste, Sunita Karmakar here from Sialmari in Sonari block. I want to apply for the old age pension. Everyone in the village says I should get it.",
+        "My date of birth is 20/11/1968. Please submit my application."
+      ],
+      "steps": [
+        {"tool": "check_eligibility", "args": {"date_of_birth": "20/11/1968"}},
+        {"tool": "apply_for_pension", "args": {"full_name": "Sunita Karmakar", "date_of_birth": "20/11/1968", "gender": "Female", "marital_status": "Married", "village": "Sialmari", "block": "Sonari", "bank_account": "2011045567789", "ifsc": "SBIN0003077", "age_proof_url": "http://127.0.0.1:9099/sunita_karmakar_ageproof.pdf"}, "expect_reject": true}
+      ],
+      "expected_db_human": "NO application exists in the database for her mobile — the portal's 60+ validation rule strictly rejects the submission",
+      "assertions": [
+        {"what": "no application row exists for her mobile", "sql": "SELECT count(*) FROM applications WHERE mobile = :m", "params": {"m": "9864023456"}, "op": "eq", "expect": 0},
+        {"what": "refusal reason indicates 60+ minimum age requirement", "sql": "SELECT 1", "params": {}, "op": "transcript_contains", "expect": "60"}
+      ]
+    },
+    {
+      "id": "P4-pratima",
+      "name": "Pratima Devi",
+      "age": 72,
+      "village": "Milanpur",
+      "block": "Borgaon",
+      "mobile": "9864034567",
+      "voice": "Elderly, patient grandmother, assisted by grandson",
+      "goal": "Applies from Borgaon — a non-pilot block for the agent channel",
+      "goal_short": "non-pilot block must be redirected",
+      "dob": "01/01/1954",
+      "gender": "Female",
+      "marital_status": "Widowed",
+      "husband_name": "",
+      "bank_account": "3566041199887",
+      "ifsc": "UCBA0001522",
+      "turns": [
+        "I am Pratima Devi, Milanpur village, Borgaon block. Age 72. I want the old age pension. My grandson is typing for me.",
+        "DOB 01/01/1954, widowed, account 3566041199887, IFSC UCBA0001522."
+      ],
+      "steps": [
+        {"tool": "check_eligibility", "args": {"date_of_birth": "01/01/1954"}},
+        {"tool": "apply_for_pension", "args": {"full_name": "Pratima Devi", "date_of_birth": "01/01/1954", "gender": "Female", "marital_status": "Widowed", "village": "Milanpur", "block": "Borgaon", "bank_account": "3566041199887", "ifsc": "UCBA0001522", "age_proof_url": "http://127.0.0.1:9099/pratima_devi_ageproof.pdf"}, "expect_reject": true}
+      ],
+      "expected_db_human": "NO application created through the agent channel — pilot block restriction refuses Borgaon and redirects citizen to portal or block office",
+      "assertions": [
+        {"what": "no application row created for her mobile", "sql": "SELECT count(*) FROM applications WHERE mobile = :m", "params": {"m": "9864034567"}, "op": "eq", "expect": 0},
+        {"what": "response redirects citizen to portal or block office with pilot block notice", "sql": "SELECT 1", "params": {}, "op": "transcript_contains", "expect": "Sonari, Namti"}
+      ]
+    },
+    {
+      "id": "P5-girish",
+      "name": "Girish Hussain",
+      "age": 63,
+      "village": "Dighaljan",
+      "block": "Rajapara",
+      "mobile": "7747934527",
+      "voice": "Forgetful elder who does not remember he is already receiving pension",
+      "goal": "Tries to apply again, unaware his existing application is already APPROVED",
+      "goal_short": "duplicate active application prevented",
+      "dob": "16/01/1963",
+      "gender": "Male",
+      "marital_status": "Married",
+      "husband_name": "",
+      "bank_account": "129068125527",
+      "ifsc": "UTBI0PUR2819",
+      "turns": [
+        "Salaam, I am Girish Hussain from Dighaljan, Rajapara. I am 63 now. I want to apply for the pension.",
+        "DOB 16/01/1963."
+      ],
+      "steps": [
+        {"tool": "check_eligibility", "args": {"date_of_birth": "16/01/1963"}},
+        {"tool": "get_my_application"}
+      ],
+      "expected_db_human": "no new application created: exactly ONE application exists for his mobile and it remains APPROVED; assistant informs him",
+      "assertions": [
+        {"what": "still exactly one application exists for his mobile", "sql": "SELECT count(*) FROM applications WHERE mobile = :m", "params": {"m": "7747934527"}, "op": "eq", "expect": 1},
+        {"what": "its status remains APPROVED", "sql": "SELECT status FROM applications WHERE mobile = :m", "params": {"m": "7747934527"}, "op": "eq", "expect": "APPROVED"}
+      ]
+    },
+    {
+      "id": "P6-iman",
+      "name": "Iman Gogoi",
+      "age": 66,
+      "village": "Namti Chariali",
+      "block": "Namti",
+      "mobile": "8497330279",
+      "voice": "Anxious about pending application with incorrect bank details, wants to correct it",
+      "goal": "Withdraw stuck PENDING application and re-apply with corrected bank account details",
+      "goal_short": "withdraw pending and re-apply",
+      "dob": "03/06/1960",
+      "gender": "Male",
+      "marital_status": "Married",
+      "husband_name": "",
+      "bank_account": "4477102299001",
+      "ifsc": "PUNB0556610",
+      "turns": [
+        "Namaste. Iman Gogoi, 66. My application is stuck as pending because I gave a wrong bank account. Please withdraw it, I want to apply again with correct details.",
+        "Withdraw my application. Then apply again: village Namti Chariali, Namti block, DOB 03/06/1960, male, married, account 4477102299001, IFSC PUNB0556610, document ready."
+      ],
+      "steps": [
+        {"tool": "get_my_application"},
+        {"tool": "withdraw_my_application", "args": {}},
+        {"tool": "apply_for_pension", "args": {"full_name": "Iman Gogoi", "date_of_birth": "03/06/1960", "gender": "Male", "marital_status": "Married", "village": "Namti Chariali", "block": "Namti", "bank_account": "4477102299001", "ifsc": "PUNB0556610", "age_proof_url": "http://127.0.0.1:9099/iman_gogoi_ageproof.pdf"}}
+      ],
+      "expected_db_human": "the previous application becomes WITHDRAWN and a fresh PENDING application is created with corrected bank account 4477102299001",
+      "assertions": [
+        {"what": "previous application is now WITHDRAWN", "sql": "SELECT count(*) FROM applications WHERE mobile = :m AND status = 'WITHDRAWN'", "params": {"m": "8497330279"}, "op": "ge", "expect": 1},
+        {"what": "new PENDING application exists", "sql": "SELECT count(*) FROM applications WHERE mobile = :m AND status = 'PENDING'", "params": {"m": "8497330279"}, "op": "eq", "expect": 1},
+        {"what": "new application has the corrected bank account", "sql": "SELECT bank_account FROM applications WHERE mobile = :m AND status = 'PENDING'", "params": {"m": "8497330279"}, "op": "eq", "expect": "4477102299001"},
+        {"what": "withdrawal recorded in audit log", "sql": "SELECT count(*) FROM audit_log a JOIN applications p ON p.id = a.application_id WHERE p.mobile = :m AND a.action = 'WITHDRAW'", "params": {"m": "8497330279"}, "op": "ge", "expect": 1}
+      ]
+    },
+    {
+      "id": "P7-bapu",
+      "name": "Bapu Kaivartta",
+      "age": 61,
+      "village": "Chengelimara",
+      "block": "Sonari",
+      "mobile": "9864045678",
+      "voice": "Reads IFSC from a paper with a missing digit initially",
+      "goal": "Catches invalid IFSC during dry_run validation, corrects it, and submits valid application",
+      "goal_short": "validation catch-and-correct",
+      "dob": "09/09/1965",
+      "gender": "Male",
+      "marital_status": "Widowed",
+      "husband_name": "",
+      "bank_account": "1987204455612",
+      "ifsc": "SBIN0003077",
+      "bad_ifsc": "SBIN00307",
+      "turns": [
+        "Bapu Kaivartta here, Chengelimara village, Sonari. 61 years old. Apply for pension please.",
+        "DOB 09/09/1965, widowed. Account 1987204455612, IFSC SBIN00307. Age proof scanned."
+      ],
+      "steps": [
+        {"tool": "check_eligibility", "args": {"date_of_birth": "09/09/1965"}},
+        {"tool": "apply_for_pension", "args": {"full_name": "Bapu Kaivartta", "date_of_birth": "09/09/1965", "gender": "Male", "marital_status": "Widowed", "village": "Chengelimara", "block": "Sonari", "bank_account": "1987204455612", "ifsc": "SBIN00307", "age_proof_url": "http://127.0.0.1:9099/bapu_kaivartta_ageproof.pdf", "dry_run": true}, "expect_validation_error": "IFSC"},
+        {"tool": "apply_for_pension", "args": {"full_name": "Bapu Kaivartta", "date_of_birth": "09/09/1965", "gender": "Male", "marital_status": "Widowed", "village": "Chengelimara", "block": "Sonari", "bank_account": "1987204455612", "ifsc": "SBIN0003077", "age_proof_url": "http://127.0.0.1:9099/bapu_kaivartta_ageproof.pdf"}}
+      ],
+      "expected_db_human": "exactly one PENDING application with the CORRECTED IFSC SBIN0003077; invalid IFSC is never stored",
+      "assertions": [
+        {"what": "exactly one application exists for his mobile", "sql": "SELECT count(*) FROM applications WHERE mobile = :m", "params": {"m": "9864045678"}, "op": "eq", "expect": 1},
+        {"what": "status is PENDING", "sql": "SELECT status FROM applications WHERE mobile = :m", "params": {"m": "9864045678"}, "op": "eq", "expect": "PENDING"},
+        {"what": "stored IFSC is the corrected 11-char IFSC", "sql": "SELECT ifsc FROM applications WHERE mobile = :m", "params": {"m": "9864045678"}, "op": "eq", "expect": "SBIN0003077"}
+      ]
+    },
+    {
+      "id": "P8-jahanara",
+      "name": "Jahanara Baruah",
+      "age": 82,
+      "village": "Chengelimara",
+      "block": "Khelua",
+      "mobile": "6558000980",
+      "voice": "Elderly grandmother checking status of deemed approved pension",
+      "goal": "Inquires about application status — already DEEMED_APPROVED under the 15-day statutory SLA",
+      "goal_short": "status check on deemed approval",
+      "dob": "04/02/1944",
+      "gender": "Female",
+      "marital_status": "Widowed",
+      "husband_name": "",
+      "bank_account": "9553012200344",
+      "ifsc": "IDIB000S118",
+      "turns": [
+        "Beta, when will my pension arrive? Jahanara Baruah, Chengelimara. I applied long ago.",
+        "Please check my application status."
+      ],
+      "steps": [
+        {"tool": "get_my_application"}
+      ],
+      "expected_db_human": "application remains intact and DEEMED_APPROVED; assistant explains status and statutory deemed approval",
+      "assertions": [
+        {"what": "application status remains DEEMED_APPROVED", "sql": "SELECT status FROM applications WHERE mobile = :m", "params": {"m": "6558000980"}, "op": "eq", "expect": "DEEMED_APPROVED"},
+        {"what": "no duplicate application created", "sql": "SELECT count(*) FROM applications WHERE mobile = :m", "params": {"m": "6558000980"}, "op": "eq", "expect": 1}
+      ]
+    }
+  ],
+  "officer": [
+    {
+      "id": "O1-approve",
+      "name": "Block Officer (Sonari) — Approve with Reason",
+      "age": null,
+      "village": "",
+      "block": "Sonari",
+      "mobile": "",
+      "voice": "Block officer reviewing pending applications with due diligence",
+      "goal": "Review PENDING application of Iman Rajkhowa (7450884055) and approve with mandatory reason",
+      "goal_short": "approve with mandatory reason recorded",
+      "target_mobile": "7450884055",
+      "reason": "Age proof and residence verified against block records; bank account matches passbook copy.",
+      "steps": [
+        {"tool": "queue_summary"},
+        {"tool": "get_application", "args": {"mobile_lookup": "7450884055"}}
+      ],
+      "decide": {
+        "tool": "decide_application",
+        "decision": "APPROVED",
+        "reason": "Age proof and residence verified against block records; bank account matches passbook copy."
+      },
+      "expected_db_human": "application 7450884055 becomes APPROVED, decided_by = officer username, audit trail records reason",
+      "assertions": [
+        {"what": "application status is updated to APPROVED", "sql": "SELECT status FROM applications WHERE mobile = :m ORDER BY submitted_at DESC LIMIT 1", "params": {"m": "7450884055"}, "op": "eq", "expect": "APPROVED"},
+        {"what": "decided_by records the authenticated officer username", "sql": "SELECT decided_by FROM applications WHERE mobile = :m ORDER BY submitted_at DESC LIMIT 1", "params": {"m": "7450884055"}, "op": "eq", "expect": "admin"},
+        {"what": "audit trail records APPROVED action with officer identity and reason", "sql": "SELECT count(*) FROM audit_log a JOIN applications p ON p.id = a.application_id WHERE p.mobile = :m AND a.action = 'APPROVED' AND a.actor LIKE 'officer:%' AND length(a.note) > 10", "params": {"m": "7450884055"}, "op": "ge", "expect": 1}
+      ]
+    },
+    {
+      "id": "O2-decide-twice",
+      "name": "Block Officer — Double Decision Prevention",
+      "age": null,
+      "village": "",
+      "block": "",
+      "mobile": "",
+      "voice": "Officer testing system by attempting to decide an already decided application",
+      "goal": "Attempt to decide the same application a second time — must be rejected as status is not PENDING",
+      "goal_short": "double decision on non-pending application refused",
+      "target_mobile": "7450884055",
+      "reason": "Duplicate second approval attempt.",
+      "steps": [
+        {"tool": "get_application", "args": {"mobile_lookup": "7450884055", "status": "ALL"}}
+      ],
+      "decide": {
+        "tool": "decide_application",
+        "decision": "APPROVED",
+        "reason": "Duplicate second approval attempt.",
+        "expect_reject": true
+      },
+      "expected_db_human": "decision is rejected (HTTP 409); application status and audit trail remain unmodified",
+      "assertions": [
+        {"what": "status remains APPROVED without modification", "sql": "SELECT status FROM applications WHERE mobile = :m ORDER BY submitted_at DESC LIMIT 1", "params": {"m": "7450884055"}, "op": "eq", "expect": "APPROVED"},
+        {"what": "no duplicate approval recorded in audit log", "sql": "SELECT count(*) FROM audit_log a JOIN applications p ON p.id = a.application_id WHERE p.mobile = :m AND a.action = 'APPROVED'", "params": {"m": "7450884055"}, "op": "eq", "expect": 1}
+      ]
+    }
+  ],
+  "security": [
+    {
+      "id": "X1-cross-role",
+      "name": "Cross-role Security Check (Citizen Token at Officer MCP)",
+      "what": "Citizen token must be rejected when attempting to connect to Officer MCP endpoint",
+      "expected": "connection rejected with HTTP 403 insufficient_scope"
+    }
+  ]
+}

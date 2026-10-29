@@ -1,0 +1,610 @@
+{
+  "run_id": "ffc3ee4d",
+  "run_at": "2026-10-18T04:14:26",
+  "assistant_mode": "scripted",
+  "citizen_endpoint": "http://localhost:3000/mcp/citizen",
+  "officer_endpoint": "http://localhost:3000/mcp/officer",
+  "summary": {
+    "personas": 11,
+    "assertions_total": 31,
+    "assertions_passed": 31,
+    "pass_rate_pct": 100.0
+  },
+  "cases": [
+    {
+      "persona": {
+        "name": "Rima Bora",
+        "age": 70,
+        "village": "Lakhipur",
+        "block": "Sonari",
+        "voice": "Simple Hinglish sentences, short, asks the assistant to do everything like her grandson would",
+        "goal": "Apply for the old age pension with her grandson helping over the phone",
+        "goal_short": "fresh pension application",
+        "expected_db_human": "one new PENDING application for mobile 9864012345: applicant Rima Bora, village Lakhipur, block Sonari, bank 3188021045678, IFSC SBIN0003077, age-proof document stored"
+      },
+      "pass": true,
+      "assertions": [
+        {
+          "what": "exactly one application exists for her mobile",
+          "passed": true,
+          "detail": "got 1, want 1"
+        },
+        {
+          "what": "its status is PENDING",
+          "passed": true,
+          "detail": "got 'PENDING', want 'PENDING'"
+        },
+        {
+          "what": "applicant name recorded correctly",
+          "passed": true,
+          "detail": "got 'Rima Bora', want 'Rima Bora'"
+        },
+        {
+          "what": "village and block as she said",
+          "passed": true,
+          "detail": "got 'Lakhipur|Sonari', want 'Lakhipur|Sonari'"
+        },
+        {
+          "what": "bank details stored exactly",
+          "passed": true,
+          "detail": "got '3188021045678|SBIN0003077', want '3188021045678|SBIN0003077'"
+        },
+        {
+          "what": "age-proof document was saved by the portal",
+          "passed": true,
+          "detail": "doc_path='/home/z/my-project/sewasetu-assistant/localenv/uploads/9864012345_ageproof.pdf'"
+        },
+        {
+          "what": "SUBMIT action written to the audit trail",
+          "passed": true,
+          "detail": "got 1, want >= 1"
+        }
+      ],
+      "assertions_passed": 7,
+      "assertions_total": 7,
+      "conversation": [
+        {
+          "role": "assistant",
+          "text": "Signed in on the portal as citizen:9864012345 (mobile OTP verified), MCP session opened."
+        },
+        {
+          "role": "user",
+          "text": "Namaste. Mere naam Rima Bora hai. Sonari block ke Lakhipur gaun me rehti hun. Meri umar 70 saal hai. Mujhe old age pension ke liye apply karna hai."
+        },
+        {
+          "role": "assistant",
+          "text": "[check_eligibility -> HTTP 200] age_ok=True window_open=True existing=None may_apply=True"
+        },
+        {
+          "role": "user",
+          "text": "Meri date of birth 05/03/1956 hai. Widowed hun. Bank account 3188021045678, IFSC SBIN0003077. Document ready hai."
+        },
+        {
+          "role": "assistant",
+          "text": "[apply_for_pension -> HTTP 201] application SSP26598216 submitted (PENDING)"
+        }
+      ]
+    },
+    {
+      "persona": {
+        "name": "Anil Das",
+        "age": 63,
+        "village": "Namti Chariali",
+        "block": "Namti",
+        "voice": "Quiet, embarrassed about the earlier rejection, double-checks everything",
+        "goal": "Apply again after his earlier application was rejected — he now lives in Namti",
+        "goal_short": "re-apply after rejection",
+        "expected_db_human": "his old REJECTED application stays REJECTED, and a NEW PENDING application appears for the same mobile with block Namti"
+      },
+      "pass": true,
+      "assertions": [
+        {
+          "what": "old application is still REJECTED",
+          "passed": true,
+          "detail": "got 1, want >= 1"
+        },
+        {
+          "what": "a new PENDING application exists",
+          "passed": true,
+          "detail": "got 1, want 1"
+        },
+        {
+          "what": "the new one names Anil Das in Namti block",
+          "passed": true,
+          "detail": "got 'Anil Das|Namti', want 'Anil Das|Namti'"
+        }
+      ],
+      "assertions_passed": 3,
+      "assertions_total": 3,
+      "conversation": [
+        {
+          "role": "assistant",
+          "text": "Signed in on the portal as citizen:6381693382 (mobile OTP verified), MCP session opened."
+        },
+        {
+          "role": "user",
+          "text": "Hello. Anil Das here. Last year my pension application was rejected. Now I have shifted to Namti Chariali in Namti block. I am 63. Can I try again?"
+        },
+        {
+          "role": "assistant",
+          "text": "[check_eligibility -> HTTP 200] age_ok=True window_open=True existing=None may_apply=True"
+        },
+        {
+          "role": "user",
+          "text": "DOB is 12/08/1963. Married. Account 9130200554433, IFSC UTBI0002819. Age proof is ready."
+        },
+        {
+          "role": "assistant",
+          "text": "[apply_for_pension -> HTTP 201] application SSP26537012 submitted (PENDING)"
+        }
+      ]
+    },
+    {
+      "persona": {
+        "name": "Sunita Karmakar",
+        "age": 58,
+        "village": "Sialmari",
+        "block": "Sonari",
+        "voice": "Hopeful, insists that 'everyone says I can get it'",
+        "goal": "Wants the pension although she is 58 — two years below the legal age",
+        "goal_short": "under-age applicant must NOT get in",
+        "expected_db_human": "NO application of any status may exist for her mobile — the portal's own 60+ rule must have refused, and the assistant must have told her honestly"
+      },
+      "pass": true,
+      "assertions": [
+        {
+          "what": "no application row at all for her mobile",
+          "passed": true,
+          "detail": "got 0, want 0"
+        },
+        {
+          "what": "the submission attempt was refused by validation (60+ rule)",
+          "passed": true,
+          "detail": "transcript '60' found"
+        }
+      ],
+      "assertions_passed": 2,
+      "assertions_total": 2,
+      "conversation": [
+        {
+          "role": "assistant",
+          "text": "Signed in on the portal as citizen:9864023456 (mobile OTP verified), MCP session opened."
+        },
+        {
+          "role": "user",
+          "text": "Namaste, Sunita Karmakar here, from Sialmari in Sonari block. I want to apply for the old age pension. Everyone in the village says I am eligible."
+        },
+        {
+          "role": "assistant",
+          "text": "[check_eligibility -> HTTP 200] age_ok=False window_open=True existing=None may_apply=False"
+        },
+        {
+          "role": "user",
+          "text": "My date of birth is 20/11/1968. Please apply for me today itself."
+        },
+        {
+          "role": "assistant",
+          "text": "[apply_for_pension -> HTTP 422] refused by validation: applicant must be 60 years of age or above"
+        }
+      ]
+    },
+    {
+      "persona": {
+        "name": "Pratima Devi",
+        "age": 72,
+        "village": "Milanpur",
+        "block": "Borgaon",
+        "voice": "Elderly, patient, does not understand 'pilot blocks' at all",
+        "goal": "Applies from Borgaon — a block the agent channel does not serve yet",
+        "goal_short": "non-pilot block must be redirected",
+        "expected_db_human": "NO application created through the agent channel — the Director's pilot-blocks rule must refuse Borgaon and point her to the portal or block office"
+      },
+      "pass": true,
+      "assertions": [
+        {
+          "what": "no application row for her mobile",
+          "passed": true,
+          "detail": "got 0, want 0"
+        },
+        {
+          "what": "the refusal tells her where she CAN apply",
+          "passed": true,
+          "detail": "transcript 'Sonari, Namti' found"
+        }
+      ],
+      "assertions_passed": 2,
+      "assertions_total": 2,
+      "conversation": [
+        {
+          "role": "assistant",
+          "text": "Signed in on the portal as citizen:9864034567 (mobile OTP verified), MCP session opened."
+        },
+        {
+          "role": "user",
+          "text": "I am Pratima Devi, Milanpur village, Borgaon block. Age 72. I want the old age pension. My grandson is typing for me."
+        },
+        {
+          "role": "assistant",
+          "text": "[check_eligibility -> HTTP 200] age_ok=True window_open=True existing=None may_apply=True"
+        },
+        {
+          "role": "user",
+          "text": "DOB 01/01/1954, widowed, account 3566041199887, IFSC UCBA0001522."
+        },
+        {
+          "role": "assistant",
+          "text": "[apply_for_pension -> HTTP 403] the AI-assisted channel currently serves only these blocks: Sonari, Namti. Please apply on the portal or at your block office for: Borgaon"
+        }
+      ]
+    },
+    {
+      "persona": {
+        "name": "Girish Hussain",
+        "age": 63,
+        "village": "Dighaljan",
+        "block": "Rajapara",
+        "voice": "Forgetful — forgot he already receives the pension",
+        "goal": "Tries to apply again, not remembering his application is already APPROVED",
+        "goal_short": "duplicate prevented",
+        "expected_db_human": "nothing new: still exactly ONE application for his mobile and it stays APPROVED — the assistant must tell him he already gets the pension"
+      },
+      "pass": true,
+      "assertions": [
+        {
+          "what": "still exactly one application for his mobile",
+          "passed": true,
+          "detail": "got 1, want 1"
+        },
+        {
+          "what": "and it is still the APPROVED one",
+          "passed": true,
+          "detail": "got 'APPROVED', want 'APPROVED'"
+        }
+      ],
+      "assertions_passed": 2,
+      "assertions_total": 2,
+      "conversation": [
+        {
+          "role": "assistant",
+          "text": "Signed in on the portal as citizen:7747934527 (mobile OTP verified), MCP session opened."
+        },
+        {
+          "role": "user",
+          "text": "Salaam, I am Girish Hussain from Dighaljan, Rajapara. I am 63 now. I want to apply for the pension."
+        },
+        {
+          "role": "assistant",
+          "text": "[check_eligibility -> HTTP 200] age_ok=True window_open=True existing=APPROVED may_apply=False"
+        },
+        {
+          "role": "user",
+          "text": "DOB 16/01/1963."
+        },
+        {
+          "role": "assistant",
+          "text": "[get_my_application -> HTTP 200] application SSP26448454 status=APPROVED"
+        }
+      ]
+    },
+    {
+      "persona": {
+        "name": "Iman Gogoi",
+        "age": 66,
+        "village": "Namti Chariali",
+        "block": "Namti",
+        "voice": "Worried about the pending application, wants it fixed quickly",
+        "goal": "Withdraw the PENDING application (wrong bank details) and apply afresh in Namti",
+        "goal_short": "withdraw then re-apply",
+        "expected_db_human": "the old application becomes WITHDRAWN and a fresh PENDING one appears with the corrected bank account 4477102299001"
+      },
+      "pass": true,
+      "assertions": [
+        {
+          "what": "old application now WITHDRAWN",
+          "passed": true,
+          "detail": "got 1, want >= 1"
+        },
+        {
+          "what": "new PENDING application exists",
+          "passed": true,
+          "detail": "got 1, want 1"
+        },
+        {
+          "what": "new one carries the corrected bank account",
+          "passed": true,
+          "detail": "got '4477102299001', want '4477102299001'"
+        },
+        {
+          "what": "withdrawal recorded in the audit trail",
+          "passed": true,
+          "detail": "got 1, want >= 1"
+        }
+      ],
+      "assertions_passed": 4,
+      "assertions_total": 4,
+      "conversation": [
+        {
+          "role": "assistant",
+          "text": "Signed in on the portal as citizen:8497330279 (mobile OTP verified), MCP session opened."
+        },
+        {
+          "role": "user",
+          "text": "Namaste. Iman Gogoi, 66. My application is stuck as pending because I gave a wrong bank account. Please withdraw it, I want to apply again with the correct details."
+        },
+        {
+          "role": "assistant",
+          "text": "[get_my_application -> HTTP 200] application SSP26332803 status=PENDING"
+        },
+        {
+          "role": "user",
+          "text": "Withdraw my application. Then apply again: village Namti Chariali, Namti block, DOB 03/06/1960, male, married, account 4477102299001, IFSC PUNB0556610, document ready."
+        },
+        {
+          "role": "assistant",
+          "text": "[withdraw_my_application -> HTTP 200] withdrew SSP26332803"
+        },
+        {
+          "role": "user",
+          "text": "(the citizen confirms: please go ahead)"
+        },
+        {
+          "role": "assistant",
+          "text": "[apply_for_pension -> HTTP 201] application SSP26865400 submitted (PENDING)"
+        }
+      ]
+    },
+    {
+      "persona": {
+        "name": "Bapu Kaivartta",
+        "age": 61,
+        "village": "Chengelimara",
+        "block": "Sonari",
+        "voice": "Reads out his IFSC wrongly from a crumpled paper (one digit missing)",
+        "goal": "Applies with an invalid IFSC first; the assistant must catch it and fix it before submitting",
+        "goal_short": "validation catch-and-correct",
+        "expected_db_human": "exactly one PENDING application with the CORRECTED IFSC SBIN0003077 — the invalid one must never reach the database"
+      },
+      "pass": true,
+      "assertions": [
+        {
+          "what": "exactly one application for his mobile",
+          "passed": true,
+          "detail": "got 1, want 1"
+        },
+        {
+          "what": "status PENDING",
+          "passed": true,
+          "detail": "got 'PENDING', want 'PENDING'"
+        },
+        {
+          "what": "stored IFSC is the corrected one",
+          "passed": true,
+          "detail": "got 'SBIN0003077', want 'SBIN0003077'"
+        }
+      ],
+      "assertions_passed": 3,
+      "assertions_total": 3,
+      "conversation": [
+        {
+          "role": "assistant",
+          "text": "Signed in on the portal as citizen:9864045678 (mobile OTP verified), MCP session opened."
+        },
+        {
+          "role": "user",
+          "text": "Bapu Kaivartta here, Chengelimara village, Sonari. 61 years old. Apply for pension please."
+        },
+        {
+          "role": "assistant",
+          "text": "[check_eligibility -> HTTP 200] age_ok=True window_open=True existing=None may_apply=True"
+        },
+        {
+          "role": "user",
+          "text": "DOB 09/09/1965, widowed. Account 1987204455612, IFSC SBIN00307. Age proof scanned."
+        },
+        {
+          "role": "assistant",
+          "text": "[apply_for_pension -> HTTP 200] refused by validation: IFSC must be 11 characters, e.g. SBIN0003077"
+        },
+        {
+          "role": "user",
+          "text": "(the citizen confirms: please go ahead)"
+        },
+        {
+          "role": "assistant",
+          "text": "[apply_for_pension -> HTTP 201] application SSP26619114 submitted (PENDING)"
+        }
+      ]
+    },
+    {
+      "persona": {
+        "name": "Jahanara Baruah",
+        "age": 82,
+        "village": "Chengelimara",
+        "block": "Khelua",
+        "voice": "Hard of hearing, repeats herself, only wants to know when the money comes",
+        "goal": "Asks when her pension will arrive — her application was already deemed approved by law",
+        "goal_short": "follow-up on deemed approval",
+        "expected_db_human": "nothing changes: her DEEMED_APPROVED application stays exactly as it is — the assistant just explains the status and the Rs.250/month"
+      },
+      "pass": true,
+      "assertions": [
+        {
+          "what": "her application is untouched and DEEMED_APPROVED",
+          "passed": true,
+          "detail": "got 'DEEMED_APPROVED', want 'DEEMED_APPROVED'"
+        },
+        {
+          "what": "no new application appeared",
+          "passed": true,
+          "detail": "got 1, want 1"
+        }
+      ],
+      "assertions_passed": 2,
+      "assertions_total": 2,
+      "conversation": [
+        {
+          "role": "assistant",
+          "text": "Signed in on the portal as citizen:6558000980 (mobile OTP verified), MCP session opened."
+        },
+        {
+          "role": "user",
+          "text": "Beta, when will my pension money come? Jahanara Baruah, Chengelimara. I applied long ago."
+        },
+        {
+          "role": "assistant",
+          "text": "[get_my_application -> HTTP 200] application SSP25218482 status=DEEMED_APPROVED"
+        },
+        {
+          "role": "user",
+          "text": "Please check my application status once more."
+        },
+        {
+          "role": "assistant",
+          "text": "conversation ended; no further tool calls."
+        }
+      ]
+    },
+    {
+      "persona": {
+        "name": "Block officer (Sonari) — approve",
+        "age": "-",
+        "village": "-",
+        "block": "Sonari",
+        "voice": "A busy officer who wants the queue cleared with proper reasons",
+        "goal": "Review the PENDING application of Iman Rajkhowa (7450884055) and approve it with a recorded reason",
+        "goal_short": "approve with reason recorded",
+        "expected_db_human": "application 7450884055 becomes APPROVED, decided_by = officer's name, audit trail holds the reason"
+      },
+      "pass": true,
+      "assertions": [
+        {
+          "what": "application is APPROVED",
+          "passed": true,
+          "detail": "got 'APPROVED', want 'APPROVED'"
+        },
+        {
+          "what": "decided_by recorded",
+          "passed": true,
+          "detail": "got 'admin', want 'admin'"
+        },
+        {
+          "what": "audit trail holds the officer's reason",
+          "passed": true,
+          "detail": "got 1, want >= 1"
+        }
+      ],
+      "assertions_passed": 3,
+      "assertions_total": 3,
+      "conversation": [
+        {
+          "role": "assistant",
+          "text": "Signed in on the portal as officer:admin, MCP session opened."
+        },
+        {
+          "role": "assistant",
+          "text": "[queue_summary] pending=703 overdue=699"
+        },
+        {
+          "role": "assistant",
+          "text": "[list_applications] 1 row(s) for 7450884055"
+        },
+        {
+          "role": "assistant",
+          "text": "[get_application] application SSP26025635 status=PENDING age_today=85"
+        },
+        {
+          "role": "assistant",
+          "text": "[decide_application] decision APPROVED recorded by admin"
+        }
+      ]
+    },
+    {
+      "persona": {
+        "name": "Block officer — double decision refused",
+        "age": "-",
+        "village": "-",
+        "block": "",
+        "voice": "Same officer, tapping approve twice by accident",
+        "goal": "Try to approve the SAME application again — must be refused because it is no longer PENDING",
+        "goal_short": "double-decision refused",
+        "expected_db_human": "the decision is refused; the application's status and decided_at stay exactly as after O1"
+      },
+      "pass": true,
+      "assertions": [
+        {
+          "what": "status still APPROVED, not changed",
+          "passed": true,
+          "detail": "got 'APPROVED', want 'APPROVED'"
+        },
+        {
+          "what": "no second APPROVED audit row",
+          "passed": true,
+          "detail": "got 1, want 1"
+        }
+      ],
+      "assertions_passed": 2,
+      "assertions_total": 2,
+      "conversation": [
+        {
+          "role": "assistant",
+          "text": "Signed in on the portal as officer:admin, MCP session opened."
+        },
+        {
+          "role": "assistant",
+          "text": "[list_applications] 1 row(s) for 7450884055"
+        },
+        {
+          "role": "assistant",
+          "text": "[get_application] application SSP26025635 status=APPROVED age_today=85"
+        },
+        {
+          "role": "assistant",
+          "text": "[decide_application] only a PENDING application can be decided; current status is APPROVED"
+        },
+        {
+          "role": "assistant",
+          "text": "correctly refused: only a PENDING application can be decided."
+        }
+      ]
+    },
+    {
+      "persona": {
+        "name": "Citizen token must not see officer tools",
+        "age": "-",
+        "village": "-",
+        "block": "-",
+        "voice": "-",
+        "goal": "Sign in as a citizen, then connect to the OFFICER MCP endpoint — the session must be refused",
+        "goal_short": "connection rejected with an insufficient-role error",
+        "expected_db_human": "connection rejected with an insufficient-role error"
+      },
+      "pass": true,
+      "assertions": [
+        {
+          "what": "Sign in as a citizen, then connect to the OFFICER MCP endpoint — the session must be refused",
+          "passed": true,
+          "detail": "connection rejected with an insufficient-role error"
+        }
+      ],
+      "assertions_passed": 1,
+      "assertions_total": 1,
+      "conversation": [
+        {
+          "role": "user",
+          "text": "Sign in as a citizen, then connect to the OFFICER MCP endpoint — the session must be refused"
+        },
+        {
+          "role": "assistant",
+          "text": "connection correctly refused: MCP session rejected at http://localhost:3000/mcp/officer (CancelledError: Cancelled via cancel scope 7fe6a81fe0f0)"
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "Every persona signed in through the portal's own OAuth flow (citizens: mobile + OTP read from the simulated SMS gateway; officers: departmental login) and every action went through the real MCP servers over streamable HTTP.",
+    "Assistants ran in scripted-policy mode: each persona's steps were executed deterministically through the real MCP client. The Director's own agent will drive the same endpoints with a live LLM.",
+    "The under-60 persona (Sunita) was refused by the portal's own validation; the Borgaon persona (Pratima) was refused by the agent-channel pilot-block rule; the duplicate persona (Girish) was told about his existing APPROVED application.",
+    "Officer decisions require a concrete reason — it is written into the audit trail against the officer's name, as the Director asked."
+  ]
+}
+

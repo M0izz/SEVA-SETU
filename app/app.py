@@ -42,6 +42,11 @@ app.config["PERMANENT_SESSION_LIFETIME"] = 7200
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
+
+def config_public_base_url():
+    return os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
+
+
 # An applicant may hold at most one application in these states at a time.
 # WITHDRAWN and REJECTED applications do not block a fresh application.
 ACTIVE_STATUSES = ("PENDING", "APPROVED", "DEEMED_APPROVED")
@@ -672,6 +677,12 @@ def admin_reject(app_id):
 
 from oauth import oauth as _oauth_blueprint   # noqa: E402  (needs the definitions above)
 app.register_blueprint(_oauth_blueprint)
+
+from api import api as _api_blueprint
+app.register_blueprint(_api_blueprint)
+
+from dashboard import dash as _dash_blueprint
+app.register_blueprint(_dash_blueprint)
 
 
 if __name__ == "__main__":

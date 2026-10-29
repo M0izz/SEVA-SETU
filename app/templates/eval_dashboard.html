@@ -1,0 +1,486 @@
+{% if not data %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sewa Setu — Assistant Evaluation Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --gold: #f59e0b;
+      --accent: #38bdf8;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      max-width: 900px;
+      margin: 60px auto;
+      padding: 0 24px;
+      line-height: 1.6;
+    }
+    .header {
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 24px;
+      margin-bottom: 32px;
+    }
+    h1 {
+      font-family: 'Merriweather', serif;
+      font-size: 28px;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+    .dept {
+      color: var(--gold);
+      font-size: 14px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 28px;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);
+    }
+    code {
+      background: #0f172a;
+      padding: 3px 8px;
+      border-radius: 6px;
+      color: var(--accent);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="dept">Government of Purvanchal &bull; Department of Social Welfare</div>
+    <h1>Sewa Setu — Assistant Evaluation Dashboard</h1>
+  </div>
+  <div class="box">
+    <h3 style="margin-top:0; color:#fff;">No evaluation results recorded yet</h3>
+    <p style="color:var(--text-muted);">
+      Evaluation results will appear here once executed. The dashboard shows real results against live MCP servers and the PostgreSQL database — it never fabricates numbers.
+    </p>
+    <p>Run the evaluation harness:</p>
+    <pre style="background:#0f172a; padding:14px; border-radius:8px; overflow-x:auto;"><code>python evals/run_evals.py</code></pre>
+  </div>
+</body>
+</html>
+{% else %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sewa Setu — Assistant Evaluation Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card: #1e293b;
+      --card-inner: #0f172a;
+      --border: #334155;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --gold: #f59e0b;
+      --green: #10b981;
+      --green-bg: rgba(16, 185, 129, 0.15);
+      --red: #ef4444;
+      --red-bg: rgba(239, 68, 68, 0.15);
+      --blue: #38bdf8;
+      --blue-bg: rgba(56, 189, 248, 0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 40px 20px 80px;
+      line-height: 1.5;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 32px;
+    }
+    .dept-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--gold);
+      margin-bottom: 6px;
+    }
+    h1 {
+      font-family: 'Merriweather', serif;
+      font-size: 28px;
+      color: #fff;
+      margin: 0 0 10px;
+    }
+    .meta-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .meta-bar code {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--blue);
+      background: var(--card-inner);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 36px;
+    }
+    .kpi-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-card::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--gold), var(--blue));
+    }
+    .kpi-num {
+      font-size: 32px;
+      font-weight: 800;
+      color: #fff;
+      line-height: 1.1;
+      margin-bottom: 4px;
+    }
+    .kpi-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .badge-pass {
+      background: var(--green-bg);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .badge-fail {
+      background: var(--red-bg);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+    .badge-role {
+      background: var(--blue-bg);
+      color: var(--blue);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    h2 {
+      font-size: 20px;
+      color: #fff;
+      margin: 40px 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    details.case-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 16px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    details.case-card:hover {
+      border-color: #475569;
+    }
+    summary {
+      padding: 18px 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      user-select: none;
+      background: var(--card);
+    }
+    summary::-webkit-details-marker { display: none; }
+    .summary-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .persona-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .persona-meta {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .case-body {
+      padding: 0 24px 24px;
+      border-top: 1px solid var(--border);
+      background: var(--card);
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+      margin: 20px 0;
+    }
+    .info-box {
+      background: var(--card-inner);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 13px;
+    }
+    .info-label {
+      color: var(--gold);
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    .convo-container {
+      background: var(--card-inner);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .msg {
+      margin-bottom: 12px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13.5px;
+      line-height: 1.5;
+    }
+    .msg-user {
+      background: rgba(56, 189, 248, 0.1);
+      border-left: 3px solid var(--blue);
+      color: #e0f2fe;
+    }
+    .msg-assistant {
+      background: rgba(255, 255, 255, 0.04);
+      border-left: 3px solid #64748b;
+      color: #cbd5e1;
+    }
+    .msg-role {
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+      color: var(--text-muted);
+    }
+    table.assert-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 12px;
+      background: var(--card-inner);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    table.assert-table th {
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-muted);
+      font-weight: 600;
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    table.assert-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      vertical-align: middle;
+    }
+    table.assert-table tr:last-child td { border-bottom: none; }
+    .notes-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-top: 24px;
+    }
+    .notes-box ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+    .notes-box li {
+      margin-bottom: 10px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .notes-box li strong {
+      color: #fff;
+    }
+    footer {
+      margin-top: 60px;
+      text-align: center;
+      font-size: 12px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="dept-title">Government of Purvanchal &bull; Department of Social Welfare</div>
+    <h1>Sewa Setu — Assistant Evaluation Dashboard</h1>
+    <div class="meta-bar">
+      <span>Run ID: <code>{{ data.run_id }}</code></span>
+      <span>Executed: <code>{{ data.run_at }}</code></span>
+      <span>Mode: <span class="badge badge-role">{{ data.assistant_mode }}</span></span>
+      <span>Citizen MCP: <code>{{ data.citizen_endpoint }}</code></span>
+      <span>Officer MCP: <code>{{ data.officer_endpoint }}</code></span>
+    </div>
+  </header>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-num">{{ data.summary.personas }}</div>
+      <div class="kpi-label">Personas &amp; Scenarios</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-num">{{ data.summary.assertions_passed }} / {{ data.summary.assertions_total }}</div>
+      <div class="kpi-label">DB Assertions Passed</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-num" style="color: {% if data.summary.pass_rate_pct == 100 %}#34d399{% else %}#f59e0b{% endif %};">
+        {{ data.summary.pass_rate_pct }}%
+      </div>
+      <div class="kpi-label">Overall Pass Rate</div>
+    </div>
+  </div>
+
+  <h2>
+    <span>Evaluated Citizen &amp; Officer Personas</span>
+    <span class="badge badge-role" style="font-size: 11px;">100% Real PostgreSQL Verification</span>
+  </h2>
+
+  {% for c in data.cases %}
+  <details class="case-card" {% if loop.first %}open{% endif %}>
+    <summary>
+      <div class="summary-left">
+        <span class="persona-title">{{ c.persona.name }}</span>
+        {% if c.persona.age %}
+        <span class="persona-meta">{{ c.persona.age }}y &bull; {{ c.persona.village }}, {{ c.persona.block }}</span>
+        {% else %}
+        <span class="persona-meta">{{ c.persona.block or 'Departmental' }}</span>
+        {% endif %}
+        <span class="badge {% if c.pass %}badge-pass{% else %}badge-fail{% endif %}">
+          {% if c.pass %}PASS{% else %}FAIL{% endif %} ({{ c.assertions_passed }}/{{ c.assertions_total }})
+        </span>
+      </div>
+      <div class="persona-meta" style="font-weight: 500;">
+        {{ c.persona.goal_short }}
+      </div>
+    </summary>
+
+    <div class="case-body">
+      <div class="info-grid">
+        <div class="info-box">
+          <div class="info-label">Communication Style &amp; Persona</div>
+          <div>{{ c.persona.voice }}</div>
+        </div>
+        <div class="info-box">
+          <div class="info-label">Application Objective</div>
+          <div>{{ c.persona.goal }}</div>
+        </div>
+        <div class="info-box" style="grid-column: 1 / -1;">
+          <div class="info-label">Required Database State Afterwards</div>
+          <div style="color: var(--blue);">{{ c.persona.expected_db_human }}</div>
+        </div>
+      </div>
+
+      <div style="font-size: 13px; font-weight: 600; color: #fff; margin: 16px 0 8px;">Real MCP Conversation Transcript:</div>
+      <div class="convo-container">
+        {% for m in c.conversation %}
+        <div class="msg {% if m.role == 'user' %}msg-user{% else %}msg-assistant{% endif %}">
+          <div class="msg-role">{{ m.role }}</div>
+          <div>{{ m.text }}</div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div style="font-size: 13px; font-weight: 600; color: #fff; margin: 18px 0 8px;">Database State Assertions ({{ c.assertions_passed }}/{{ c.assertions_total }} Passed):</div>
+      <table class="assert-table">
+        <thead>
+          <tr>
+            <th>Assertion Specification</th>
+            <th style="width: 110px;">Status</th>
+            <th>Observed Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in c.assertions %}
+          <tr>
+            <td><strong>{{ a.what }}</strong></td>
+            <td>
+              <span class="badge {% if a.passed %}badge-pass{% else %}badge-fail{% endif %}">
+                {% if a.passed %}PASS{% else %}FAIL{% endif %}
+              </span>
+            </td>
+            <td><code style="font-size: 12px; color: var(--text-muted);">{{ a.detail }}</code></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endfor %}
+
+  {% if data.notes %}
+  <div class="notes-box">
+    <h3 style="color:#fff; margin-top:0; font-size:16px;">Key Design Insights &amp; Findings from Evals</h3>
+    <ul>
+      {% for note in data.notes %}
+      <li>{{ note }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <footer>
+    Old Age Pension Portal &bull; Department of Social Welfare, Government of Purvanchal<br>
+    All tests executed against real MCP endpoints over Streamable HTTP and verified against Postgres.
+  </footer>
+
+</body>
+</html>
+{% endif %}

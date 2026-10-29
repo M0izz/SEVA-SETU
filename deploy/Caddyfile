@@ -1,0 +1,41 @@
+# Sewa Setu public entrypoint.
+# One domain, three services:
+#   /mcp/citizen*      -> citizen MCP server   (citizen scope tools)
+#   /mcp/officer*      -> officer MCP server   (officer scope tools)
+#   /.well-known/...   -> RFC 9728 protected-resource metadata per role
+#   everything else    -> the Flask portal (system of record, OAuth AS, /eval-dashboard)
+
+{$DOMAIN:http://localhost} {
+
+	# RFC 9728 metadata per role
+	@citizen_wk path /.well-known/oauth-protected-resource/mcp/citizen
+	handle @citizen_wk {
+		reverse_proxy mcp-citizen:8001
+	}
+
+	@officer_wk path /.well-known/oauth-protected-resource/mcp/officer
+	handle @officer_wk {
+		reverse_proxy mcp-officer:8002
+	}
+
+	# The MCP endpoints (streamable HTTP)
+	@mcp_citizen path /mcp/citizen*
+	handle @mcp_citizen {
+		reverse_proxy mcp-citizen:8001
+	}
+
+	@mcp_officer path /mcp/officer*
+	handle @mcp_officer {
+		reverse_proxy mcp-officer:8002
+	}
+
+	# Courtesy document
+	handle /.well-known/oauth-protected-resource {
+		reverse_proxy mcp-citizen:8001
+	}
+
+	# The portal (including OAuth server, status portal, admin and /eval-dashboard)
+	handle {
+		reverse_proxy app:8000
+	}
+}

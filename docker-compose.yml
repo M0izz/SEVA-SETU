@@ -1,5 +1,6 @@
 services:
   db:
+    restart: unless-stopped
     image: postgres:15
     environment:
       POSTGRES_DB: sewasetu
@@ -11,14 +12,13 @@ services:
       - ./seed/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
 
   app:
+    restart: unless-stopped
     build: ./app
     ports:
       - "8000:8000"
     environment:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-before-deploying}
-      # the address at which people reach this portal; stamped into sign-in tokens and
-      # discovery documents, so it must be the public one when deployed
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
     depends_on:
       - db
@@ -26,11 +26,11 @@ services:
     volumes:
       - uploads:/var/sewasetu/uploads
       - applogs:/var/log/sewasetu
+      - ./evals:/app/evals:ro
 
   scheduler:
+    restart: unless-stopped
     build: ./app
-    # Run the deemed-approval job once at startup (so a freshly restored
-    # database is brought up to date), then hand over to cron for the nightly run.
     command: ["sh", "-c", "until python /app/scripts/deemed_approval.py; do sleep 5; done; exec cron -f"]
     depends_on:
       - db
@@ -38,13 +38,57 @@ services:
       - applogs:/var/log/sewasetu
 
   smsgw:
+    restart: unless-stopped
     build: ./smsgw
-    # internal only — reached by the app over the docker network and exposed to
-    # users via the app at /__gateway/ (so no second host port is needed)
     expose:
       - "8025"
+
+  mcp-citizen:
+    restart: unless-stopped
+    build: ./mcp
+    command: ["python", "mcp_citizen.py"]
+    environment:
+      MCP_PORT: "8001"
+      PORTAL_URL: http://app:8000
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
+    ports:
+      - "8001:8001"
+    depends_on:
+      - app
+
+  mcp-officer:
+    restart: unless-stopped
+    build: ./mcp
+    command: ["python", "mcp_officer.py"]
+    environment:
+      MCP_PORT: "8002"
+      PORTAL_URL: http://app:8000
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
+    ports:
+      - "8002:8002"
+    depends_on:
+      - app
+
+  caddy:
+    restart: unless-stopped
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${PUBLIC_BASE_URL:-http://localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+      - mcp-citizen
+      - mcp-officer
 
 volumes:
   pgdata:
   uploads:
   applogs:
+  caddy_data:
+  caddy_config:
