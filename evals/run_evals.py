@@ -511,7 +511,8 @@ async def main():
     def _mask_pii(text):
         if not isinstance(text, str):
             return text
-        text = re.sub(r"\b([6-9]\d{4})(\d{5})\b", r"\1XXXXX", text)
+        text = re.sub(r"(?<!\d)([6-9]\d{4})(\d{5})(?!\d)", r"\1XXXXX", text)
+
         def _mbank(m):
             v = m.group(0)
             return v[:2] + "XXXXXX" + v[-4:] if 9 <= len(v) <= 18 else v

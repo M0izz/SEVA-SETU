@@ -12,7 +12,8 @@ def mask_pii_text(text: str) -> str:
     if not isinstance(text, str):
         return text
     # Mask 10-digit Indian mobile numbers: e.g. 9864012345 -> 98640XXXXX
-    text = re.sub(r"\b([6-9]\d{4})(\d{5})\b", r"\1XXXXX", text)
+    text = re.sub(r"(?<!\d)([6-9]\d{4})(\d{5})(?!\d)", r"\1XXXXX", text)
+
     # Mask bank accounts (9 to 18 digits): e.g. 3188021045678 -> 31XXXXXX5678
     def _mask_bank(match):
         val = match.group(0)
@@ -25,7 +26,9 @@ def mask_pii_text(text: str) -> str:
     text = re.sub(r"(?i)\b(otp\s*(?:is|:|=)\s*)(\d{6})\b", r"\1XXXXXX", text)
     # Mask Bearer tokens / JWTs
     text = re.sub(r"Bearer\s+eyJ[A-Za-z0-9-_.]+", "Bearer [MASKED_TOKEN]", text)
+    text = re.sub(r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b", "[MASKED_JWT_TOKEN]", text)
     return text
+
 
 
 def sanitize_payload(obj):

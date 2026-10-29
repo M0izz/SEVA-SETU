@@ -6,10 +6,17 @@ services:
       POSTGRES_DB: sewasetu
       POSTGRES_USER: sewasetu
       POSTGRES_PASSWORD: sewasetu123
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sewasetu"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./app/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
       - ./seed/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+      - ./app/migrations/001_active_unique.sql:/docker-entrypoint-initdb.d/03-migration-001.sql
+      - ./app/migrations/002_officer_blocks.sql:/docker-entrypoint-initdb.d/04-migration-002.sql
 
   app:
     restart: unless-stopped
@@ -20,9 +27,12 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-before-deploying}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
+      OFFICER_BLOCK_MAPPINGS: ${OFFICER_BLOCK_MAPPINGS:-{"admin":"Sonari","officer_sonari":"Sonari","officer_namti":"Namti"}}
     depends_on:
-      - db
-      - smsgw
+      db:
+        condition: service_healthy
+      smsgw:
+        condition: service_started
     volumes:
       - uploads:/var/sewasetu/uploads
       - applogs:/var/log/sewasetu
@@ -33,7 +43,9 @@ services:
     build: ./app
     command: ["sh", "-c", "until python /app/scripts/deemed_approval.py; do sleep 5; done; exec cron -f"]
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+
     volumes:
       - applogs:/var/log/sewasetu
 

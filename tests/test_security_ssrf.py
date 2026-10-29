@@ -197,3 +197,17 @@ def test_ssrf_rejects_hostname_rebinding_to_metadata_ip():
         assert content is None
         assert "private, loopback, link-local, or internal IP" in err
 
+
+def test_ssrf_rejects_mixed_public_and_private_dns_answers():
+    """If a hostname returns multiple IP addresses where one is public and one is private,
+    the request must be rejected entirely to prevent multihomed rebinding."""
+    mixed_answers = [
+        (2, 1, 6, "", ("93.184.216.34", 80)),  # Public
+        (2, 1, 6, "", ("10.0.0.5", 80)),        # Private RFC 1918
+    ]
+    with patch("socket.getaddrinfo", return_value=mixed_answers):
+        content, err = api_module._validate_and_fetch_url("http://mixed-dns.attacker.com/proof.pdf")
+        assert content is None
+        assert "private, loopback, link-local, or internal IP" in err
+
+

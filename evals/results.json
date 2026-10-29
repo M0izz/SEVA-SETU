@@ -57,7 +57,8 @@
         {
           "what": "age-proof document was saved by the portal",
           "passed": true,
-          "detail": "doc_path='/home/z/my-project/sewasetu-assistant/localenv/uploads/9864012345_ageproof.pdf'"
+          "detail": "doc_path='/home/z/my-project/sewasetu-assistant/localenv/uploads/98640XXXXX_ageproof.pdf'"
+
         },
         {
           "what": "SUBMIT action written to the audit trail",
