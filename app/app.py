@@ -74,13 +74,19 @@ except Exception:
 
 
 def get_db():
+    host = os.environ.get("POSTGRES_HOST") or os.environ.get("DB_HOST") or config.get("database", "host")
+    port = os.environ.get("POSTGRES_PORT") or os.environ.get("DB_PORT") or config.get("database", "port")
+    dbname = os.environ.get("POSTGRES_DB") or os.environ.get("DB_NAME") or config.get("database", "name")
+    user = os.environ.get("POSTGRES_USER") or os.environ.get("DB_USER") or config.get("database", "user")
+    password = os.environ.get("POSTGRES_PASSWORD") or os.environ.get("DB_PASSWORD") or config.get("database", "password")
     return psycopg2.connect(
-        host=config.get("database", "host"),
-        port=config.get("database", "port"),
-        dbname=config.get("database", "name"),
-        user=config.get("database", "user"),
-        password=config.get("database", "password"),
+        host=host,
+        port=port,
+        dbname=dbname,
+        user=user,
+        password=password,
     )
+
 
 
 def sanitize(value, maxlen=100):

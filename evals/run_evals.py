@@ -44,6 +44,8 @@ OFFICER_URL = os.environ.get("SS_OFFICER_MCP", "http://127.0.0.1:8002/mcp/office
 OFFICER_USER = os.environ.get("SS_OFFICER_USER", "admin")
 OFFICER_PASS = os.environ.get("SS_OFFICER_PASS", "change-me-before-deploying")
 DOCS_PORT = int(os.environ.get("SS_DOCS_PORT", "9099"))
+os.environ["ALLOWED_DOC_HOSTS"] = f"127.0.0.1:{DOCS_PORT},localhost:{DOCS_PORT},127.0.0.1,localhost"
+
 
 PG = dict(
     host=os.environ.get("SS_DB_HOST", "127.0.0.1"),
@@ -499,9 +501,31 @@ async def main():
         ]
     }
 
+    def _mask_pii(text):
+        if not isinstance(text, str):
+            return text
+        text = re.sub(r"\b([6-9]\d{4})(\d{5})\b", r"\1XXXXX", text)
+        def _mbank(m):
+            v = m.group(0)
+            return v[:2] + "XXXXXX" + v[-4:] if 9 <= len(v) <= 18 else v
+        text = re.sub(r"\b\d{9,18}\b", _mbank, text)
+        text = re.sub(r"(?i)\b(otp\s*(?:is|:|=)\s*)(\d{6})\b", r"\1XXXXXX", text)
+        return text
+
+    def _sanitize(o):
+        if isinstance(o, dict):
+            return {k: _sanitize(v) for k, v in o.items()}
+        elif isinstance(o, list):
+            return [_sanitize(x) for x in o]
+        elif isinstance(o, str):
+            return _mask_pii(o)
+        return o
+
+    masked_results = _sanitize(results)
     out_file = HERE / "results.json"
-    out_file.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
+    out_file.write_text(json.dumps(masked_results, indent=2, ensure_ascii=False), encoding="utf-8")
     print("Results written to: %s" % out_file)
+
 
     conn.close()
     try:

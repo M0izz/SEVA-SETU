@@ -97,45 +97,61 @@ This project transforms the existing Flask-based portal into an **agent-ready pu
 
 ## Running Automated Tests
 
-Run the complete test suite (27 tests covering citizen flows, officer flows, integration, and security):
+Run the complete test suite (56 automated tests covering citizen flows, officer flows, real MCP integration over Streamable HTTP, OAuth token verification, concurrency defense, SSRF elimination, document magic byte validation, and dashboard privacy):
 
 ```bash
-python -m pytest tests/ -v
+python -m pytest tests/ --cov=app --cov=mcp -v
 ```
 
-All 27 test cases pass deterministically.
+All 56 test cases pass deterministically.
 
 ---
 
-## Evaluation Framework & Dashboard
+## Security Hardening & Vulnerability Remediation
 
-### Invented Personas & Scenarios
-The evaluation harness (`evals/run_evals.py`) runs real MCP client conversations against live endpoints and verifies PostgreSQL assertions:
-1. **Rima Bora (70, Sonari):** Eligible fresh applicant assisted by grandson. Verified: PENDING status, correct bank details, age proof stored, SUBMIT audit log.
-2. **Anil Das (63, Namti):** Re-applying after previous rejection. Verified: Old REJECTED preserved, new PENDING created.
-3. **Sunita Karmakar (58, Sonari):** Underage applicant. Verified: Backend 60+ rule rejects submission; zero database rows created.
-4. **Pratima Devi (72, Borgaon):** Non-pilot block applicant. Verified: Refused with redirection to block office; no application created.
-5. **Girish Hussain (63, Rajapara):** Forgetful applicant who already has an APPROVED pension. Verified: Duplicate submission prevented.
-6. **Iman Gogoi (66, Namti):** Applicant with incorrect bank details. Verified: Existing pending application withdrawn; new application with corrected details created.
-7. **Bapu Kaivartta (61, Sonari):** Malformed IFSC on crumpled paper. Verified: Catch-and-correct via `dry_run=true`; only valid IFSC stored.
-8. **Jahanara Baruah (82, Khelua):** Applicant whose application exceeded 15-day SLA. Verified: Deemed approval status confirmed.
-9. **Officer Approval (Sonari):** Officer approves pending application with recorded reason. Verified: Status updated to APPROVED, `decided_by` set to authenticated officer, reason logged in audit trail.
-10. **Officer Double Decision:** Officer attempts to decide an already approved application. Verified: HTTP 409 conflict refused.
-11. **Security Isolation:** Citizen token connects to Officer MCP. Verified: Connection rejected with HTTP 403 `insufficient_scope`.
+This release includes complete remediation of all audit findings and security hardening:
 
-### Running Evals
-```bash
-python evals/run_evals.py
-```
-Open `http://localhost:8000/eval-dashboard` to view the rich interactive report with complete transcripts, tool breakdowns, and database checks.
+1. **Dual MCP SDK Compatibility (`mcp 1.x` and `2.x`):**
+   - Automatically supports both FastMCP (`mcp 1.x`) and MCPServer (`mcp 2.x`).
+   - Configures `TransportSecuritySettings` to operate correctly behind reverse proxies (Caddy) and containerized networks.
+   - Distinct endpoints `/mcp/citizen` and `/mcp/officer` with zero cross-tool leakage.
+
+2. **SSRF Elimination (`app/api.py`):**
+   - Direct base64 content strictly validated with byte limits before decoding.
+   - Remote URL validation rejects loopback, private RFC 1918 subnets, cloud metadata (`169.254.169.254`), internal Docker service names (`smsgw`, `db`, `app`, `scheduler`), IPv6 loopback, non-standard ports, and embedded credentials.
+   - Disables HTTP redirects (`allow_redirects=False`) to prevent open-redirect SSRF bypass.
+   - Enforces 5-second timeouts and bounded streaming downloads (max 5 MB).
+
+3. **File Signature & Magic Bytes Validation:**
+   - Every uploaded or fetched document is inspected for authentic magic bytes (`%PDF-`, `\xff\xd8\xff`, `\x89PNG\r\n\x1a\n`).
+   - Rejects HTML, SVG, XML, PHP, scripts, DOS/PE binaries, and polyglots.
+   - Prevents path traversal using sanitized filenames and isolated upload directory storage.
+
+4. **Concurrency Hardening & Duplicate Prevention:**
+   - Partial unique database index: `CREATE UNIQUE INDEX idx_active_app_mobile ON applications(mobile) WHERE status IN ('PENDING', 'APPROVED', 'DEEMED_APPROVED')`.
+   - Handles race conditions gracefully with HTTP 409 `active_application_exists`.
+   - Preserves legitimate reapplication after rejection or withdrawal.
+   - Includes repeatable migration in `app/migrations/001_active_unique.sql` and `app/migrations/apply_migrations.py`.
+
+5. **PII Masking & Dashboard Privacy:**
+   - Public evaluation dashboard automatically sanitizes mobile numbers (`98640XXXXX`), bank accounts (`31XXXXXX5678`), OTPs, and access tokens from both rendered HTML and page source.
+
+---
+
+## Known Limitations
+
+- **Officer Block Jurisdiction:** The legacy portal database schema provides a single administrator account (`admin`) rather than individual officer accounts with assigned administrative blocks. In the current design, the `block` parameter in officer tools acts as a queue filter rather than an authorization boundary. True officer role-based access control (RBAC) requires expanding the schema with dedicated officer identity and jurisdiction tables.
+- **LLM vs Scripted Evals:** The evaluation harness defaults to deterministic scripted MCP client execution for reproducible CI/CD testing. A live LLM mode can be enabled by supplying `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL`.
 
 ---
 
 ## Deliverables Summary
 
-- `DESIGN-NOTE.md`: One-page architectural note on the three critical design decisions and future improvements.
-- `LOOM-SCRIPT.md`: Exact 3-minute video walkthrough outline.
-- `app/api.py`: Shared service layer and REST API.
-- `mcp/`: Dual FastMCP servers with ASGI OAuth 2.1 Bearer guards.
-- `evals/`: End-to-end evaluation runner, personas, and mock SMS client.
-- `tests/`: Pytest suite with 100% pass rate.
+- `DESIGN-NOTE.md`: One-page architectural note on critical decisions and statutory workflows.
+- `LOOM-SCRIPT.md`: Video walkthrough outline.
+- `app/api.py`: Hardened shared service layer and REST API.
+- `app/migrations/`: Migration scripts and pre-flight conflict checks.
+- `mcp/`: Dual-compatible MCP servers with OAuth 2.1 Bearer guards.
+- `evals/`: End-to-end evaluation runner with PII sanitization and real Postgres checks.
+- `tests/`: 56 automated pytest test cases with 100% pass rate.
+

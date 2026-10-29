@@ -16,9 +16,13 @@ Design rules (from the Director's note):
 """
 
 import base64
+import ipaddress
 import json
 import os
 import re
+import secrets
+import socket
+import urllib.parse
 from datetime import datetime, timedelta
 
 import requests as http
@@ -36,6 +40,13 @@ AGENT_PILOT_BLOCKS = ("Sonari", "Namti")
 
 UPLOAD_EXT_WHITELIST = ("pdf", "jpg", "jpeg", "png")
 MAX_DOC_BYTES = 5 * 1024 * 1024
+MAX_B64_LEN = (MAX_DOC_BYTES * 4 // 3) + 2048
+
+BLOCKED_INTERNAL_HOSTS = {
+    "localhost", "db", "postgres", "smsgw", "app", "scheduler",
+    "caddy", "redis", "citizen-mcp", "officer-mcp", "127.0.0.1", "::1"
+}
+
 
 
 def _mcp_audience(role):
@@ -116,55 +127,179 @@ def citizen_eligibility():
     return jsonify(out)
 
 
+def _detect_and_validate_format(content: bytes) -> tuple[str | None, str | None]:
+    """Validate document bytes against magic signatures and reject dangerous/ambiguous payloads.
+    Returns (detected_ext, error_detail)."""
+    if not content or len(content) < 8:
+        return None, "file is empty or too small"
+    if len(content) > MAX_DOC_BYTES:
+        return None, "file is larger than 5 MB"
+
+    head_1k = content[:1024].lower()
+    dangerous_signatures = (
+        b"<html", b"<!doctype html", b"<script", b"<?xml", b"<svg",
+        b"<?php", b"<% ", b"#!/bin/", b"#!/usr/bin/", b"mz", b"\x7felf"
+    )
+    for sig in dangerous_signatures:
+        if sig in head_1k:
+            return None, "executable, script, SVG, or HTML files are not permitted"
+
+    if content.startswith(b"%PDF-"):
+        return "pdf", None
+    elif content.startswith(b"\xff\xd8\xff"):
+        return "jpg", None
+    elif content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png", None
+
+    return None, "age proof must be a valid PDF, JPG or PNG document (unrecognized signature)"
+
+
+def _is_safe_ip(ip_str: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        if ip.version == 6 and ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        if (ip.is_private or ip.is_loopback or ip.is_link_local or
+                ip.is_multicast or ip.is_reserved or ip.is_unspecified):
+            return False
+        if str(ip) in ("169.254.169.254", "fd00:ec2::254"):
+            return False
+        return True
+    except ValueError:
+        return False
+
+
+def _is_allowed_eval_host(hostname: str, port: int) -> bool:
+    allowed = os.environ.get("ALLOWED_DOC_HOSTS", "").strip()
+    if not allowed:
+        return False
+    allowed_list = [h.strip().lower() for h in allowed.split(",") if h.strip()]
+    target = f"{hostname.lower()}:{port}"
+    return hostname.lower() in allowed_list or target in allowed_list
+
+
+def _validate_and_fetch_url(url: str) -> tuple[bytes | None, str | None]:
+    """Safely validate and fetch remote document with strict SSRF defense."""
+    url = (url or "").strip()
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except Exception:
+        return None, "malformed URL"
+
+    scheme = parsed.scheme.lower()
+    if scheme not in ("http", "https"):
+        return None, "age_proof url must use HTTP or HTTPS"
+
+    if parsed.username or parsed.password:
+        return None, "URLs with embedded credentials are not permitted"
+
+    hostname = parsed.hostname
+    if not hostname:
+        return None, "URL must include a valid hostname"
+
+    hostname_clean = hostname.lower().strip("[]")
+    port = parsed.port or (443 if scheme == "https" else 80)
+
+    # Check evaluation bypass (only active when ALLOWED_DOC_HOSTS is explicitly configured)
+    is_eval_allowed = _is_allowed_eval_host(hostname_clean, port)
+
+    if not is_eval_allowed:
+        if hostname_clean in BLOCKED_INTERNAL_HOSTS or hostname_clean.endswith((".local", ".internal", ".localhost")):
+            return None, "access to internal network addresses or services is prohibited"
+
+        if port not in (80, 443, 8080, 8443):
+            return None, "non-standard destination ports are prohibited"
+
+        try:
+            addr_info = socket.getaddrinfo(hostname_clean, port, type=socket.SOCK_STREAM)
+            if not addr_info:
+                return None, "could not resolve destination host"
+            for addr in addr_info:
+                ip_str = addr[4][0]
+                if not _is_safe_ip(ip_str):
+                    return None, "access to private, loopback, link-local, or internal IP addresses is prohibited"
+        except socket.gaierror:
+            return None, "destination host could not be resolved"
+        except Exception:
+            return None, "destination address validation failed"
+
+    # Streaming download with redirects disabled
+    try:
+        r = http.get(
+            url,
+            timeout=5,
+            stream=True,
+            allow_redirects=False,
+            headers={"User-Agent": "SewaSetu-Agent/1.0"}
+        )
+    except Exception:
+        return None, "could not connect to the remote host"
+
+    if r.status_code in (301, 302, 303, 307, 308):
+        return None, "URL redirects are not permitted for security reasons"
+
+    if r.status_code != 200:
+        return None, "age_proof url returned HTTP %d" % r.status_code
+
+    chunks = []
+    total = 0
+    try:
+        for chunk in r.iter_content(chunk_size=8192):
+            if chunk:
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > MAX_DOC_BYTES:
+                    return None, "file is larger than 5 MB"
+    except Exception:
+        return None, "connection interrupted while reading file"
+
+    return b"".join(chunks), None
+
+
 def _save_age_proof(mobile, payload):
-    """Store the age-proof document the same way the web upload does.
-    Accepts either a URL (agent fetches it) or base64 content. Returns
-    (path, error_json_or_none)."""
-    ext = None
+    """Store the age-proof document with strict byte signature and SSRF validation.
+    Accepts either a URL or bounded base64 content. Returns (path, error_response_or_none)."""
     content = None
     if payload.get("content_b64"):
-        filename = payload.get("filename") or "ageproof"
-        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        raw_b64 = str(payload.get("content_b64")).strip()
+        if len(raw_b64) > MAX_B64_LEN:
+            return None, (jsonify({"error": "bad_age_proof",
+                                   "detail": "file is larger than 5 MB"}), 400)
+        clean_b64 = raw_b64.rstrip(".").strip()
         try:
-            content = base64.b64decode(payload["content_b64"])
+            content = base64.b64decode(clean_b64, validate=True)
         except Exception:
             return None, (jsonify({"error": "bad_age_proof",
                                    "detail": "content_b64 is not valid base64"}), 400)
+
     elif payload.get("url"):
-        url = (payload.get("url") or "").strip()
-        if not re.match(r"^https?://", url):
-            return None, (jsonify({"error": "bad_age_proof",
-                                   "detail": "age_proof url must be http(s)"}), 400)
-        try:
-            r = http.get(url, timeout=15, stream=True,
-                         headers={"User-Agent": "SewaSetu-Agent/1.0"})
-        except Exception as e:
-            return None, (jsonify({"error": "bad_age_proof",
-                                   "detail": "could not fetch age_proof url: %s" % e}), 400)
-        if r.status_code != 200:
-            return None, (jsonify({"error": "bad_age_proof",
-                                   "detail": "age_proof url returned HTTP %d" % r.status_code}), 400)
-        content = r.raw.read(MAX_DOC_BYTES + 1, decode_content=True)
-        if len(content) > MAX_DOC_BYTES:
-            return None, (jsonify({"error": "bad_age_proof",
-                                   "detail": "file is larger than 5 MB"}), 400)
-        ext = (url.rsplit(".", 1)[-1].lower()[:5] if "." in url.rsplit("/", 1)[-1] else "")
-        if ext not in UPLOAD_EXT_WHITELIST:
-            ctype = (r.headers.get("Content-Type") or "").split("/")[-1].lower()
-            ext = ctype if ctype in UPLOAD_EXT_WHITELIST else ""
+        fetched_content, fetch_err = _validate_and_fetch_url(payload.get("url"))
+        if fetch_err:
+            return None, (jsonify({"error": "bad_age_proof", "detail": fetch_err}), 400)
+        content = fetched_content
     else:
         return None, (jsonify({"error": "bad_age_proof",
                                 "detail": "provide age_proof url or content_b64"}), 400)
-    if ext not in UPLOAD_EXT_WHITELIST:
-        return None, (jsonify({"error": "bad_age_proof",
-                               "detail": "age proof must be a JPG, PNG or PDF file"}), 400)
-    if len(content) > MAX_DOC_BYTES:
-        return None, (jsonify({"error": "bad_age_proof",
-                               "detail": "file is larger than 5 MB"}), 400)
+
+    detected_ext, sig_err = _detect_and_validate_format(content)
+    if sig_err:
+        return None, (jsonify({"error": "bad_age_proof", "detail": sig_err}), 400)
+
     os.makedirs(portal.UPLOAD_DIR, exist_ok=True)
-    path = os.path.join(portal.UPLOAD_DIR, "%s_%s" % (mobile, "ageproof." + ext))
-    with open(path, "wb") as out:
-        out.write(content)
+    clean_mobile = re.sub(r"[^0-9]", "", str(mobile))
+    safe_name = "%s_ageproof_%s.%s" % (clean_mobile, secrets.token_hex(4), detected_ext)
+    path = os.path.join(portal.UPLOAD_DIR, safe_name)
+    try:
+        with open(path, "wb") as out:
+            out.write(content)
+    except Exception:
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+        return None, (jsonify({"error": "bad_age_proof",
+                               "detail": "failed to store age proof document"}), 500)
     return path, None
 
 
@@ -172,7 +307,7 @@ def _save_age_proof(mobile, payload):
 def citizen_apply():
     """Submit (or dry-run) a pension application for the signed-in citizen.
     Same validation as the web form — via validate_application() — plus the
-    agent-channel pilot-block restriction."""
+    agent-channel pilot-block restriction and database-level concurrency protection."""
     claims, err = _authenticate("citizen")
     if err:
         return err
@@ -195,9 +330,20 @@ def citizen_apply():
 
     errors, cleaned = portal.validate_application(data, doc_path)
     if dry_run:
+        # Clean up temporary upload file created during dry-run validation
+        if doc_path and os.path.exists(doc_path):
+            try:
+                os.remove(doc_path)
+            except Exception:
+                pass
         return jsonify({"dry_run": True, "valid": not errors, "errors": errors,
                         "would_submit": cleaned if not errors else None})
     if errors:
+        if doc_path and os.path.exists(doc_path):
+            try:
+                os.remove(doc_path)
+            except Exception:
+                pass
         return jsonify({"error": "validation_failed", "errors": errors}), 422
 
     conn = portal.get_db()
@@ -205,18 +351,44 @@ def citizen_apply():
     existing = portal.active_application(cur, mobile)
     if existing:
         cur.close(); conn.close()
+        if doc_path and os.path.exists(doc_path):
+            try:
+                os.remove(doc_path)
+            except Exception:
+                pass
         return jsonify({"error": "active_application_exists",
                         "application_no": existing[1], "status": existing[2],
                         "detail": "this mobile number already holds an active "
                                   "application; a PENDING one can be withdrawn "
                                   "from the status portal first"}), 409
-    new_id, app_no = portal.create_application(cur, mobile, cleaned)
-    conn.commit()
+
+    try:
+        new_id, app_no = portal.create_application(cur, mobile, cleaned)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        err_msg = str(e).lower()
+        if "unique" in err_msg or "duplicate" in err_msg or "idx_active_app_mobile" in err_msg:
+            existing = portal.active_application(cur, mobile)
+            cur.close(); conn.close()
+            if doc_path and os.path.exists(doc_path):
+                try:
+                    os.remove(doc_path)
+                except Exception:
+                    pass
+            return jsonify({"error": "active_application_exists",
+                            "application_no": existing[1] if existing else None,
+                            "status": existing[2] if existing else "PENDING",
+                            "detail": "this mobile number already holds an active application"}), 409
+        cur.close(); conn.close()
+        raise
+
     cur.close(); conn.close()
     portal.send_sms(mobile, "Sewa Setu: application %s received. Track at the status portal "
                             "with mobile no. and password (DOB as DDMMYYYY)." % app_no)
     return jsonify({"application_no": app_no, "status": "PENDING",
                     "submitted_at": portal.now_ist().isoformat(timespec="seconds")}), 201
+
 
 
 @api.get("/api/citizen/application")

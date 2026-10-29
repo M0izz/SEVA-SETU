@@ -14,15 +14,14 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from mcp.server.fastmcp import FastMCP
 from starlette.responses import JSONResponse
-
 import mcp_common as mc
 
 ROLE = "officer"
 
-mcp = FastMCP(
+mcp = mc.create_mcp_server(
     "sewasetu-officer",
+    ROLE,
     instructions=(
         "You assist a block officer of the Sewa Setu Old Age Pension portal. "
         "You see the departmental queue, inspect applications and application history, "
@@ -33,10 +32,8 @@ mcp = FastMCP(
         "decide pending ones and inspect the queue. If a tool returns http_status 403/401, "
         "the token is invalid or expired — prompt the officer to sign in again."
     ),
-    stateless_http=True,
-    json_response=True,
-    streamable_http_path="/mcp/" + ROLE,
 )
+
 
 
 @mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
@@ -119,7 +116,8 @@ async def decide_application(application_no: str, decision: str, reason: str) ->
 
 def build_app():
     """Starlette app: OAuth resource-server guard in front of the MCP endpoint."""
-    return mc.RequireBearerMiddleware(mcp.streamable_http_app(), ROLE)
+    return mc.build_mcp_app(mcp, ROLE)
+
 
 
 if __name__ == "__main__":

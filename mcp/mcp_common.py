@@ -28,6 +28,45 @@ PUBLIC_BASE = os.environ.get("PUBLIC_BASE_URL", PORTAL_URL).rstrip("/")
 _current_auth = contextvars.ContextVar("current_auth", default=None)
 
 
+def create_mcp_server(name: str, role: str, instructions: str):
+    """Create an MCP server compatible with both mcp 1.x (FastMCP) and 2.x (MCPServer)."""
+    try:
+        from mcp.server.mcpserver import MCPServer
+        server = MCPServer(name, instructions=instructions)
+        server._is_v2 = True
+        server._role = role
+        return server
+    except ImportError:
+        from mcp.server.fastmcp import FastMCP
+        server = FastMCP(
+            name,
+            instructions=instructions,
+            stateless_http=True,
+            json_response=True,
+            streamable_http_path="/mcp/" + role,
+        )
+        server._is_v2 = False
+        server._role = role
+        return server
+
+
+def build_mcp_app(server, role: str):
+    """Build the Starlette app with OAuth RequireBearerMiddleware."""
+    if getattr(server, "_is_v2", False):
+        from mcp.server.transport_security import TransportSecuritySettings
+        sec = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+        starlette_app = server.streamable_http_app(
+            streamable_http_path="/mcp/" + role,
+            stateless_http=True,
+            json_response=True,
+            transport_security=sec,
+        )
+    else:
+        starlette_app = server.streamable_http_app()
+    return RequireBearerMiddleware(starlette_app, role)
+
+
+
 class AuthError(Exception):
     def __init__(self, code, detail, status=401):
         self.code = code

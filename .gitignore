@@ -6,3 +6,5 @@ pgdata/
 uploads/
 applogs/
 evals/docs/
+.coverage
+*.zip

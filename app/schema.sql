@@ -38,6 +38,11 @@ CREATE TABLE IF NOT EXISTS otps (
 
 CREATE INDEX IF NOT EXISTS idx_app_mobile ON applications(mobile);
 CREATE INDEX IF NOT EXISTS idx_app_status ON applications(status);
+-- Concurrency defense: prevent multiple simultaneous active applications per mobile
+CREATE UNIQUE INDEX IF NOT EXISTS idx_active_app_mobile
+ON applications(mobile)
+WHERE status IN ('PENDING', 'APPROVED', 'DEEMED_APPROVED');
+
 
 -- Who did what to an application, and when (submit / withdraw / approve / reject / deemed).
 CREATE TABLE IF NOT EXISTS audit_log (

@@ -150,8 +150,10 @@ class MCPSession:
                                          follow_redirects=True)
         self._stack = streamable_http_client(self.url, http_client=self._client)
         try:
-            read, write, _ = await self._stack.__aenter__()
+            streams = await self._stack.__aenter__()
+            read, write = streams[0], streams[1]
             self._session = ClientSession(read, write)
+
             await self._session.__aenter__()
             await self._session.initialize()
         except BaseException as e:

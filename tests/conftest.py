@@ -21,6 +21,18 @@ sys.path.insert(0, str(EVALS_DIR))
 import app as portal
 import oauth as oauth_as
 from api import api as api_blueprint
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+
+@pytest.fixture(autouse=True, scope="session")
+def setup_ephemeral_oauth_key():
+    """Ensure in-memory RSA key is available for token generation without database dependency."""
+    if "priv" not in oauth_as._KEY_CACHE:
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        oauth_as._KEY_CACHE["kid"] = "test-ephemeral-kid"
+        oauth_as._KEY_CACHE["priv"] = key
+    yield
+
 
 
 @pytest.fixture

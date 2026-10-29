@@ -20,7 +20,7 @@
         "voice": "Simple Hinglish sentences, short, asks the assistant to do everything like her grandson would",
         "goal": "Apply for the old age pension with her grandson helping over the phone",
         "goal_short": "fresh pension application",
-        "expected_db_human": "one new PENDING application for mobile 9864012345: applicant Rima Bora, village Lakhipur, block Sonari, bank 3188021045678, IFSC SBIN0003077, age-proof document stored"
+        "expected_db_human": "one new PENDING application for mobile 98640XXXXX: applicant Rima Bora, village Lakhipur, block Sonari, bank 31XXXXXX5678, IFSC SBIN0003077, age-proof document stored"
       },
       "pass": true,
       "assertions": [
@@ -47,7 +47,7 @@
         {
           "what": "bank details stored exactly",
           "passed": true,
-          "detail": "got '3188021045678|SBIN0003077', want '3188021045678|SBIN0003077'"
+          "detail": "got '31XXXXXX5678|SBIN0003077', want '31XXXXXX5678|SBIN0003077'"
         },
         {
           "what": "age-proof document was saved by the portal",
@@ -65,7 +65,7 @@
       "conversation": [
         {
           "role": "assistant",
-          "text": "Signed in on the portal as citizen:9864012345 (mobile OTP verified), MCP session opened."
+          "text": "Signed in on the portal as citizen:98640XXXXX (mobile OTP verified), MCP session opened."
         },
         {
           "role": "user",
@@ -77,7 +77,7 @@
         },
         {
           "role": "user",
-          "text": "Meri date of birth 05/03/1956 hai. Widowed hun. Bank account 3188021045678, IFSC SBIN0003077. Document ready hai."
+          "text": "Meri date of birth 05/03/1956 hai. Widowed hun. Bank account 31XXXXXX5678, IFSC SBIN0003077. Document ready hai."
         },
         {
           "role": "assistant",
@@ -119,7 +119,7 @@
       "conversation": [
         {
           "role": "assistant",
-          "text": "Signed in on the portal as citizen:6381693382 (mobile OTP verified), MCP session opened."
+          "text": "Signed in on the portal as citizen:63816XXXXX (mobile OTP verified), MCP session opened."
         },
         {
           "role": "user",
@@ -131,7 +131,7 @@
         },
         {
           "role": "user",
-          "text": "DOB is 12/08/1963. Married. Account 9130200554433, IFSC UTBI0002819. Age proof is ready."
+          "text": "DOB is 12/08/1963. Married. Account 91XXXXXX4433, IFSC UTBI0002819. Age proof is ready."
         },
         {
           "role": "assistant",
@@ -168,7 +168,7 @@
       "conversation": [
         {
           "role": "assistant",
-          "text": "Signed in on the portal as citizen:9864023456 (mobile OTP verified), MCP session opened."
+          "text": "Signed in on the portal as citizen:98640XXXXX (mobile OTP verified), MCP session opened."
         },
         {
           "role": "user",
@@ -217,7 +217,7 @@
       "conversation": [
         {
           "role": "assistant",
-          "text": "Signed in on the portal as citizen:9864034567 (mobile OTP verified), MCP session opened."
+          "text": "Signed in on the portal as citizen:98640XXXXX (mobile OTP verified), MCP session opened."
         },
         {
           "role": "user",
@@ -229,7 +229,7 @@
         },
         {
           "role": "user",
-          "text": "DOB 01/01/1954, widowed, account 3566041199887, IFSC UCBA0001522."
+          "text": "DOB 01/01/1954, widowed, account 35XXXXXX9887, IFSC UCBA0001522."
         },
         {
           "role": "assistant",
@@ -266,7 +266,7 @@
       "conversation": [
         {
           "role": "assistant",
-          "text": "Signed in on the portal as citizen:7747934527 (mobile OTP verified), MCP session opened."
+          "text": "Signed in on the portal as citizen:77479XXXXX (mobile OTP verified), MCP session opened."
         },
         {
           "role": "user",
@@ -295,7 +295,7 @@
         "voice": "Worried about the pending application, wants it fixed quickly",
         "goal": "Withdraw the PENDING application (wrong bank details) and apply afresh in Namti",
         "goal_short": "withdraw then re-apply",
-        "expected_db_human": "the old application becomes WITHDRAWN and a fresh PENDING one appears with the corrected bank account 4477102299001"
+        "expected_db_human": "the old application becomes WITHDRAWN and a fresh PENDING one appears with the corrected bank account 44XXXXXX9001"
       },
       "pass": true,
       "assertions": [
@@ -312,7 +312,7 @@
         {
           "what": "new one carries the corrected bank account",
           "passed": true,
-          "detail": "got '4477102299001', want '4477102299001'"
+          "detail": "got '44XXXXXX9001', want '44XXXXXX9001'"
         },
         {
           "what": "withdrawal recorded in the audit trail",
@@ -325,7 +325,7 @@
       "conversation": [
         {
           "role": "assistant",
-          "text": "Signed in on the portal as citizen:8497330279 (mobile OTP verified), MCP session opened."
+          "text": "Signed in on the portal as citizen:84973XXXXX (mobile OTP verified), MCP session opened."
         },
         {
           "role": "user",
@@ -337,7 +337,7 @@
         },
         {
           "role": "user",
-          "text": "Withdraw my application. Then apply again: village Namti Chariali, Namti block, DOB 03/06/1960, male, married, account 4477102299001, IFSC PUNB0556610, document ready."
+          "text": "Withdraw my application. Then apply again: village Namti Chariali, Namti block, DOB 03/06/1960, male, married, account 44XXXXXX9001, IFSC PUNB0556610, document ready."
         },
         {
           "role": "assistant",
@@ -387,7 +387,7 @@
       "conversation": [
         {
           "role": "assistant",
-          "text": "Signed in on the portal as citizen:9864045678 (mobile OTP verified), MCP session opened."
+          "text": "Signed in on the portal as citizen:98640XXXXX (mobile OTP verified), MCP session opened."
         },
         {
           "role": "user",
@@ -399,7 +399,7 @@
         },
         {
           "role": "user",
-          "text": "DOB 09/09/1965, widowed. Account 1987204455612, IFSC SBIN00307. Age proof scanned."
+          "text": "DOB 09/09/1965, widowed. Account 19XXXXXX5612, IFSC SBIN00307. Age proof scanned."
         },
         {
           "role": "assistant",
@@ -444,7 +444,7 @@
       "conversation": [
         {
           "role": "assistant",
-          "text": "Signed in on the portal as citizen:6558000980 (mobile OTP verified), MCP session opened."
+          "text": "Signed in on the portal as citizen:65580XXXXX (mobile OTP verified), MCP session opened."
         },
         {
           "role": "user",
@@ -471,9 +471,9 @@
         "village": "-",
         "block": "Sonari",
         "voice": "A busy officer who wants the queue cleared with proper reasons",
-        "goal": "Review the PENDING application of Iman Rajkhowa (7450884055) and approve it with a recorded reason",
+        "goal": "Review the PENDING application of Iman Rajkhowa (74508XXXXX) and approve it with a recorded reason",
         "goal_short": "approve with reason recorded",
-        "expected_db_human": "application 7450884055 becomes APPROVED, decided_by = officer's name, audit trail holds the reason"
+        "expected_db_human": "application 74508XXXXX becomes APPROVED, decided_by = officer's name, audit trail holds the reason"
       },
       "pass": true,
       "assertions": [
@@ -506,7 +506,7 @@
         },
         {
           "role": "assistant",
-          "text": "[list_applications] 1 row(s) for 7450884055"
+          "text": "[list_applications] 1 row(s) for 74508XXXXX"
         },
         {
           "role": "assistant",
@@ -551,7 +551,7 @@
         },
         {
           "role": "assistant",
-          "text": "[list_applications] 1 row(s) for 7450884055"
+          "text": "[list_applications] 1 row(s) for 74508XXXXX"
         },
         {
           "role": "assistant",
@@ -607,4 +607,3 @@
     "Officer decisions require a concrete reason — it is written into the audit trail against the officer's name, as the Director asked."
   ]
 }
-
