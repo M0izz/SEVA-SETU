@@ -38,7 +38,7 @@ def test_application_inspection(client, mock_db):
     cur.fetchone.return_value = (
         1, "SSP26448454", "Iman Rajkhowa", "7450884055",
         datetime(1941, 4, 10).date(), "Male", "Widowed", "",
-        "Khelua Gaon", "Khelua", "8696868557716", "IDIB000S118",
+        "Khelua Gaon", "Sonari", "8696868557716", "IDIB000S118",
         "/var/sewasetu/uploads/doc.pdf", "PENDING",
         datetime(2026, 9, 26, 12, 34), None, None
     )
@@ -67,10 +67,11 @@ def test_successful_approval(client, mock_db):
     conn, cur = mock_db
     cur.fetchone.side_effect = [
         (1, "SSP26448454", "Iman Rajkhowa", "7450884055", datetime(1941, 4, 10).date(), "Male",
-         "Widowed", "", "Khelua Gaon", "Khelua", "8696868557716", "IDIB000S118", "/doc.pdf",
+         "Widowed", "", "Khelua Gaon", "Sonari", "8696868557716", "IDIB000S118", "/doc.pdf",
          "PENDING", datetime(2026, 9, 26), None, None), # _find_application
         ("SSP26448454",), # UPDATE returning application_no
     ]
+
 
     with patch("oauth.verify_token") as mock_verify:
         mock_verify.return_value = {

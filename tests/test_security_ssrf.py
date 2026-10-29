@@ -96,13 +96,14 @@ def test_ssrf_rejects_redirects(client, citizen_token):
     mock_resp.status_code = 302
     mock_resp.headers = {"Location": "http://127.0.0.1:8000/admin"}
 
-    with patch("socket.getaddrinfo") as mock_dns, patch("requests.get", return_value=mock_resp):
+    with patch("socket.getaddrinfo") as mock_dns, patch("requests.Session.get", return_value=mock_resp):
         mock_dns.return_value = [(2, 1, 6, "", ("93.184.216.34", 80))] # Public IP
         res = client.post("/api/citizen/apply",
                           headers={"Authorization": f"Bearer {token}"},
                           json={"age_proof": {"url": "http://example.com/redirect.pdf"}, "dry_run": True})
         assert res.status_code == 400
         assert "redirects are not permitted" in res.get_json()["detail"]
+
 
 
 def test_ssrf_rejects_malformed_and_unsupported_schemes(client, citizen_token):
@@ -130,10 +131,69 @@ def test_ssrf_rejects_oversized_response(client, citizen_token):
     # Stream chunks totaling over 5MB
     mock_resp.iter_content.return_value = [b"X" * (1024 * 1024) for _ in range(6)]
 
-    with patch("socket.getaddrinfo") as mock_dns, patch("requests.get", return_value=mock_resp):
+    with patch("socket.getaddrinfo") as mock_dns, patch("requests.Session.get", return_value=mock_resp):
         mock_dns.return_value = [(2, 1, 6, "", ("93.184.216.34", 80))]
         res = client.post("/api/citizen/apply",
                           headers={"Authorization": f"Bearer {token}"},
                           json={"age_proof": {"url": "http://example.com/large.pdf"}, "dry_run": True})
         assert res.status_code == 400
         assert "larger than 5 MB" in res.get_json()["detail"]
+
+
+def test_ssrf_dns_rebinding_pins_transport():
+    """Prove that PinnedIPAdapter connects to the validated IP without re-resolving hostname,
+    preserving the Host header and defeating DNS rebinding attacks."""
+    import http.server
+    import threading
+
+    captured = {}
+
+    class TestHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            captured["host_header"] = self.headers.get("Host")
+            captured["path"] = self.path
+            self.send_response(200)
+            self.send_header("Content-Type", "application/pdf")
+            self.end_headers()
+            self.wfile.write(b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF")
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), TestHandler)
+    server_port = server.server_port
+    thread = threading.Thread(target=server.handle_request)
+    thread.daemon = True
+    thread.start()
+
+    # The domain name is completely unresolvable in DNS
+    unresolvable_url = f"http://rebinding-attacker-fake-domain.test:{server_port}/doc.pdf"
+
+    # In eval/test mode, ALLOWED_DOC_HOSTS allows our test server port
+    with patch.dict("os.environ", {"ALLOWED_DOC_HOSTS": f"127.0.0.1:{server_port},rebinding-attacker-fake-domain.test:{server_port}"}):
+        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("127.0.0.1", server_port))]):
+            content, err = api_module._validate_and_fetch_url(unresolvable_url)
+
+    server.server_close()
+    thread.join(timeout=2)
+
+    assert err is None, f"Expected successful fetch, got: {err}"
+    assert content.startswith(b"%PDF-")
+    assert captured.get("host_header") == f"rebinding-attacker-fake-domain.test:{server_port}"
+
+
+def test_ssrf_rejects_hostname_resolving_to_private_ip():
+    """A public domain name that resolves to a private IP must be rejected immediately."""
+    with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("192.168.1.50", 80))]):
+        content, err = api_module._validate_and_fetch_url("http://attacker-controlled-rebinding.com/proof.pdf")
+        assert content is None
+        assert "private, loopback, link-local, or internal IP" in err
+
+
+def test_ssrf_rejects_hostname_rebinding_to_metadata_ip():
+    """A hostname resolving to cloud metadata IP 169.254.169.254 must be blocked."""
+    with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("169.254.169.254", 80))]):
+        content, err = api_module._validate_and_fetch_url("http://cloud-meta.attacker.com/proof.pdf")
+        assert content is None
+        assert "private, loopback, link-local, or internal IP" in err
+

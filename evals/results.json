@@ -1,7 +1,12 @@
 {
   "run_id": "ffc3ee4d",
   "run_at": "2026-10-18T04:14:26",
-  "assistant_mode": "scripted",
+  "assistant_mode": "scripted_regression",
+  "mode_label": "Scripted MCP Regression Suite (Deterministic Tool Replay)",
+  "is_live_llm": false,
+  "llm_verified": false,
+  "llm_model": "None (Deterministic Replay)",
+
   "citizen_endpoint": "http://localhost:3000/mcp/citizen",
   "officer_endpoint": "http://localhost:3000/mcp/officer",
   "summary": {

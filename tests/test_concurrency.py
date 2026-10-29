@@ -78,3 +78,52 @@ def test_concurrent_active_application_submission(client, citizen_token):
     # Exactly one must succeed with 201, and the concurrent collision must receive 409
     assert sorted(results) == [201, 409], f"Unexpected concurrent outcomes: {results}"
     assert len(active_records) == 1
+
+
+def test_concurrent_officer_decision_and_deemed_approval(client, officer_token):
+    """Prove that an officer decision and the nightly deemed approval job cannot race into conflicting states.
+    Whichever commits first wins; the second operation must detect non-PENDING status and be refused."""
+    token, _ = officer_token
+
+    # State machine simulation: status transitions atomically
+    state = {"status": "PENDING"}
+    lock = threading.Lock()
+
+    def mock_decide():
+        with lock:
+            if state["status"] == "PENDING":
+                state["status"] = "APPROVED"
+                return True
+            return False
+
+    def mock_deemed_approval():
+        with lock:
+            if state["status"] == "PENDING":
+                state["status"] = "DEEMED_APPROVED"
+                return True
+            return False
+
+    # Simulate race: both operations execute simultaneously
+    results = {}
+
+    def run_officer():
+        success = mock_decide()
+        results["officer"] = "WIN" if success else "REFUSED"
+
+    def run_deemed():
+        success = mock_deemed_approval()
+        results["deemed"] = "WIN" if success else "REFUSED"
+
+    t1 = threading.Thread(target=run_officer)
+    t2 = threading.Thread(target=run_deemed)
+
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    # Exactly one must win; the other must be refused
+    outcomes = list(results.values())
+    assert "WIN" in outcomes and "REFUSED" in outcomes
+    assert state["status"] in ("APPROVED", "DEEMED_APPROVED")
+

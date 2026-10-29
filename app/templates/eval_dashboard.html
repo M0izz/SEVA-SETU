@@ -365,11 +365,26 @@
     <div class="meta-bar">
       <span>Run ID: <code>{{ data.run_id }}</code></span>
       <span>Executed: <code>{{ data.run_at }}</code></span>
-      <span>Mode: <span class="badge badge-role">{{ data.assistant_mode }}</span></span>
+      <span>Mode: 
+        {% if data.llm_verified or data.is_live_llm or data.assistant_mode == 'live_llm' %}
+          <span class="badge badge-pass" style="background:#065f46; color:#34d399; font-weight:700;">[LIVE MODEL EVALUATION: {{ data.llm_model }}]</span>
+        {% else %}
+          <span class="badge" style="background:#1e3a8a; color:#60a5fa; font-weight:700;">[SCRIPTED REGRESSION (DETERMINISTIC MCP HARNESS)]</span>
+        {% endif %}
+      </span>
       <span>Citizen MCP: <code>{{ data.citizen_endpoint }}</code></span>
       <span>Officer MCP: <code>{{ data.officer_endpoint }}</code></span>
     </div>
+    <div style="background: rgba(30, 58, 138, 0.25); border: 1px solid #1e40af; border-radius: 8px; padding: 12px 18px; margin-top: 16px; font-size: 13px; color: #93c5fd;">
+      <strong>Evaluation Integrity Notice:</strong> 
+      {% if data.llm_verified or data.is_live_llm or data.assistant_mode == 'live_llm' %}
+        This evaluation executed live LLM model conversations with dynamic tool calling against the authentic MCP servers and PostgreSQL database.
+      {% else %}
+        This evaluation executed deterministic scripted conversations through the authentic MCP client over Streamable HTTP transport against live PostgreSQL. Live LLM evaluations require setting <code>LLM_API_KEY</code>, <code>LLM_BASE_URL</code>, and <code>LLM_MODEL</code>.
+      {% endif %}
+    </div>
   </header>
+
 
   <div class="kpi-grid">
     <div class="kpi-card">

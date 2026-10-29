@@ -114,3 +114,19 @@ CREATE TABLE IF NOT EXISTS oauth_program_tokens (     -- admin-issued, long-live
     expires_at TIMESTAMP,
     revoked_at TIMESTAMP
 );
+
+-- Trusted block-level officer authorization assignments
+CREATE TABLE IF NOT EXISTS officer_blocks (
+    username    VARCHAR(50) PRIMARY KEY,
+    block       VARCHAR(50) NOT NULL,
+    full_name   VARCHAR(100),
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO officer_blocks (username, block, full_name)
+VALUES
+    ('admin', 'Sonari', 'Administrator (Sonari Block)'),
+    ('officer_sonari', 'Sonari', 'Block Development Officer (Sonari)'),
+    ('officer_namti', 'Namti', 'Block Development Officer (Namti)')
+ON CONFLICT (username) DO UPDATE SET block = EXCLUDED.block;
+

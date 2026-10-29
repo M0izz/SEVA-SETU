@@ -97,13 +97,15 @@ This project transforms the existing Flask-based portal into an **agent-ready pu
 
 ## Running Automated Tests
 
-Run the complete test suite (56 automated tests covering citizen flows, officer flows, real MCP integration over Streamable HTTP, OAuth token verification, concurrency defense, SSRF elimination, document magic byte validation, and dashboard privacy):
+## Running Automated Tests
+
+Run the complete test suite (67 automated tests covering citizen flows, officer block authorization boundaries, real MCP integration over Streamable HTTP, OAuth token verification, concurrency defense, SSRF DNS-rebinding elimination, document magic byte validation, and dashboard privacy):
 
 ```bash
-python -m pytest tests/ --cov=app --cov=mcp -v
+python -m pytest tests/ --cov=app --cov=mcp --cov-report=term-missing -v
 ```
 
-All 56 test cases pass deterministically.
+All 67 test cases pass deterministically (48% statement coverage).
 
 ---
 
@@ -111,47 +113,52 @@ All 56 test cases pass deterministically.
 
 This release includes complete remediation of all audit findings and security hardening:
 
-1. **Dual MCP SDK Compatibility (`mcp 1.x` and `2.x`):**
-   - Automatically supports both FastMCP (`mcp 1.x`) and MCPServer (`mcp 2.x`).
-   - Configures `TransportSecuritySettings` to operate correctly behind reverse proxies (Caddy) and containerized networks.
+1. **Dual MCP SDK Compatibility & Version Pinning:**
+   - Pinned exact tested version `mcp==2.3.0` in `mcp/requirements.txt`.
+   - Supports both Streamable HTTP transport and official SDK client interfaces.
    - Distinct endpoints `/mcp/citizen` and `/mcp/officer` with zero cross-tool leakage.
 
-2. **SSRF Elimination (`app/api.py`):**
-   - Direct base64 content strictly validated with byte limits before decoding.
-   - Remote URL validation rejects loopback, private RFC 1918 subnets, cloud metadata (`169.254.169.254`), internal Docker service names (`smsgw`, `db`, `app`, `scheduler`), IPv6 loopback, non-standard ports, and embedded credentials.
+2. **SSRF & DNS-Rebinding Elimination (`app/api.py`):**
+   - Implements custom `PinnedIPAdapter` that binds socket connection directly to the pre-validated IP address.
+   - Prevents DNS-rebinding TOCTOU: no secondary hostname resolution occurs between validation and TCP connection.
+   - Preserves original hostname for TLS SNI, certificate validation (`verify=True`), and the HTTP `Host` header.
+   - Validates destination IP against loopback, private RFC 1918 subnets, cloud metadata (`169.254.169.254`, `fd00:ec2::254`), internal Docker service names (`smsgw`, `db`, `app`, `scheduler`), IPv6 loopback, non-standard ports, and embedded credentials.
    - Disables HTTP redirects (`allow_redirects=False`) to prevent open-redirect SSRF bypass.
    - Enforces 5-second timeouts and bounded streaming downloads (max 5 MB).
 
-3. **File Signature & Magic Bytes Validation:**
+3. **Block-Level Officer Authorization Boundaries:**
+   - Introduces trusted `officer_blocks` table and configuration mapping binding officer identities strictly to authorized blocks.
+   - Caller-supplied `block` query parameter is rejected if it differs from the officer's authorized block.
+   - Cross-block access attempts return HTTP 403 Forbidden without leaking application details.
+   - Enforces block boundaries across all officer endpoints (`/api/officer/applications`, `/api/officer/application/<id>`, `/api/officer/summary`, `/api/officer/decide`).
+   - Audit trail records officer identity, application ID, assigned block, and decision reason.
+   - Overwriting completed officer decisions or 15-day statutory deemed approvals is rejected with HTTP 409 Conflict.
+
+4. **File Signature & Magic Bytes Validation:**
    - Every uploaded or fetched document is inspected for authentic magic bytes (`%PDF-`, `\xff\xd8\xff`, `\x89PNG\r\n\x1a\n`).
    - Rejects HTML, SVG, XML, PHP, scripts, DOS/PE binaries, and polyglots.
    - Prevents path traversal using sanitized filenames and isolated upload directory storage.
 
-4. **Concurrency Hardening & Duplicate Prevention:**
+5. **Concurrency Hardening & Idempotent Migrations:**
    - Partial unique database index: `CREATE UNIQUE INDEX idx_active_app_mobile ON applications(mobile) WHERE status IN ('PENDING', 'APPROVED', 'DEEMED_APPROVED')`.
    - Handles race conditions gracefully with HTTP 409 `active_application_exists`.
-   - Preserves legitimate reapplication after rejection or withdrawal.
-   - Includes repeatable migration in `app/migrations/001_active_unique.sql` and `app/migrations/apply_migrations.py`.
+   - Safe migration pre-flight checks in `app/migrations/apply_migrations.py` detect conflicting records without deleting or modifying citizen data.
+   - Migrations tracked idempotently in `schema_migrations` table (`001_active_unique.sql`, `002_officer_blocks.sql`).
 
-5. **PII Masking & Dashboard Privacy:**
-   - Public evaluation dashboard automatically sanitizes mobile numbers (`98640XXXXX`), bank accounts (`31XXXXXX5678`), OTPs, and access tokens from both rendered HTML and page source.
-
----
-
-## Known Limitations
-
-- **Officer Block Jurisdiction:** The legacy portal database schema provides a single administrator account (`admin`) rather than individual officer accounts with assigned administrative blocks. In the current design, the `block` parameter in officer tools acts as a queue filter rather than an authorization boundary. True officer role-based access control (RBAC) requires expanding the schema with dedicated officer identity and jurisdiction tables.
-- **LLM vs Scripted Evals:** The evaluation harness defaults to deterministic scripted MCP client execution for reproducible CI/CD testing. A live LLM mode can be enabled by supplying `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL`.
+6. **PII Masking & Verifiable Evaluations:**
+   - Public evaluation dashboard automatically sanitizes mobile numbers (`98640XXXXX`), bank accounts (`31XXXXXX5678`), OTPs, and access tokens.
+   - Clear distinction between `[SCRIPTED REGRESSION (DETERMINISTIC MCP HARNESS)]` and `[LIVE MODEL EVALUATION]` on dashboard.
 
 ---
 
 ## Deliverables Summary
 
-- `DESIGN-NOTE.md`: One-page architectural note on critical decisions and statutory workflows.
+- `DESIGN-NOTE.md`: Architectural note on critical decisions, statutory workflows, and threat mitigations.
 - `LOOM-SCRIPT.md`: Video walkthrough outline.
-- `app/api.py`: Hardened shared service layer and REST API.
-- `app/migrations/`: Migration scripts and pre-flight conflict checks.
-- `mcp/`: Dual-compatible MCP servers with OAuth 2.1 Bearer guards.
+- `app/api.py`: Hardened shared service layer, anti-DNS-rebinding transport, and block-authorized REST API.
+- `app/migrations/`: Safe pre-flight migration runner, partial unique index, and officer block mapping schema.
+- `mcp/`: Dual-compatible MCP servers pinned to `mcp==2.3.0` with OAuth 2.1 Bearer guards.
 - `evals/`: End-to-end evaluation runner with PII sanitization and real Postgres checks.
-- `tests/`: 56 automated pytest test cases with 100% pass rate.
+- `tests/`: 67 automated pytest test cases with 100% pass rate.
+
 

@@ -26,6 +26,11 @@ import urllib.parse
 from datetime import datetime, timedelta
 
 import requests as http
+from requests.adapters import HTTPAdapter
+from urllib3.connection import HTTPConnection, HTTPSConnection
+from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
+from urllib3.poolmanager import PoolManager
+from urllib3.util import connection
 from flask import Blueprint, jsonify, request, abort
 
 import app as portal
@@ -46,6 +51,77 @@ BLOCKED_INTERNAL_HOSTS = {
     "localhost", "db", "postgres", "smsgw", "app", "scheduler",
     "caddy", "redis", "citizen-mcp", "officer-mcp", "127.0.0.1", "::1"
 }
+
+# Trusted block assignments for departmental officers
+DEFAULT_OFFICER_BLOCKS = {
+    "admin": "Sonari",
+    "officer_sonari": "Sonari",
+    "officer_namti": "Namti",
+    "block_officer_sonari": "Sonari",
+}
+
+
+
+def _create_pinned_pool_classes(pinned_ip: str):
+    """Create HTTP and HTTPS connection pool classes that bind directly
+    to the pre-validated IP address, guaranteeing that no secondary DNS
+    lookup occurs between validation and TCP socket connection (anti-DNS-rebinding).
+    TLS SNI and certificate verification are preserved using the original hostname."""
+    class PinnedHTTPConnection(HTTPConnection):
+        def _new_conn(self):
+            extra_kw = {}
+            if self.source_address:
+                extra_kw["source_address"] = self.source_address
+            if self.socket_options:
+                extra_kw["socket_options"] = self.socket_options
+            return connection.create_connection(
+                (pinned_ip, self.port),
+                self.timeout,
+                **extra_kw
+            )
+
+    class PinnedHTTPSConnection(HTTPSConnection):
+        def _new_conn(self):
+            extra_kw = {}
+            if self.source_address:
+                extra_kw["source_address"] = self.source_address
+            if self.socket_options:
+                extra_kw["socket_options"] = self.socket_options
+            return connection.create_connection(
+                (pinned_ip, self.port),
+                self.timeout,
+                **extra_kw
+            )
+
+    class PinnedHTTPPool(HTTPConnectionPool):
+        ConnectionCls = PinnedHTTPConnection
+
+    class PinnedHTTPSPool(HTTPSConnectionPool):
+        ConnectionCls = PinnedHTTPSConnection
+
+    return PinnedHTTPPool, PinnedHTTPSPool
+
+
+class PinnedIPAdapter(HTTPAdapter):
+    """Requests adapter enforcing transport-level IP pinning to prevent DNS rebinding."""
+
+    def __init__(self, pinned_ip: str, *args, **kwargs):
+        self.pinned_ip = pinned_ip
+        self.http_pool_cls, self.https_pool_cls = _create_pinned_pool_classes(pinned_ip)
+        super().__init__(*args, **kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        self.poolmanager = PoolManager(
+            num_pools=connections,
+            maxsize=maxsize,
+            block=block,
+            **pool_kwargs
+        )
+        self.poolmanager.pool_classes_by_scheme = {
+            "http": self.http_pool_cls,
+            "https": self.https_pool_cls,
+        }
+
 
 
 
@@ -223,17 +299,34 @@ def _validate_and_fetch_url(url: str) -> tuple[bytes | None, str | None]:
         except Exception:
             return None, "destination address validation failed"
 
-    # Streaming download with redirects disabled
+        validated_ip = addr_info[0][4][0]
+    else:
+        # Evaluation bypass (only active when ALLOWED_DOC_HOSTS is explicitly configured)
+        try:
+            addr_info = socket.getaddrinfo(hostname_clean, port, type=socket.SOCK_STREAM)
+            validated_ip = addr_info[0][4][0]
+        except Exception:
+            validated_ip = hostname_clean
+
+    # Enforce transport-level IP pinning to eliminate DNS rebinding TOCTOU
+    session = http.Session()
+    adapter = PinnedIPAdapter(validated_ip)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+
     try:
-        r = http.get(
+        r = session.get(
             url,
             timeout=5,
             stream=True,
             allow_redirects=False,
+            verify=True,
             headers={"User-Agent": "SewaSetu-Agent/1.0"}
         )
     except Exception:
         return None, "could not connect to the remote host"
+    finally:
+        session.close()
 
     if r.status_code in (301, 302, 303, 307, 308):
         return None, "URL redirects are not permitted for security reasons"
@@ -254,6 +347,7 @@ def _validate_and_fetch_url(url: str) -> tuple[bytes | None, str | None]:
         return None, "connection interrupted while reading file"
 
     return b"".join(chunks), None
+
 
 
 def _save_age_proof(mobile, payload):
@@ -463,30 +557,73 @@ def citizen_withdraw():
 
 
 # ---------------------------------------------------------------------------
-# Officer endpoints
+# Officer endpoints & Block-Level Authorization
 # ---------------------------------------------------------------------------
+
+def _get_officer_block(username: str) -> str | None:
+    """Retrieve trusted block assignment for an officer identity.
+    Checks configured env mappings first, then trusted defaults, then queries database.
+    Returns None if officer has no trusted block assignment."""
+    env_blocks = os.environ.get("OFFICER_BLOCK_MAPPINGS")
+    if env_blocks:
+        try:
+            mapping = json.loads(env_blocks)
+            if username in mapping:
+                return mapping[username]
+        except Exception:
+            pass
+
+    if username in DEFAULT_OFFICER_BLOCKS:
+        return DEFAULT_OFFICER_BLOCKS[username]
+
+    try:
+        conn = portal.get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT block FROM officer_blocks WHERE username = %s", (username,))
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if row and isinstance(row[0], str) and row[0]:
+            return row[0]
+
+    except Exception:
+        pass
+
+    return None
+
+
 
 @api.get("/api/officer/summary")
 def officer_summary():
     claims, err = _authenticate("officer")
     if err:
         return err
+    officer_user = _subject_value(claims, "officer")
+    assigned_block = _get_officer_block(officer_user)
+    if not assigned_block:
+        return jsonify({"error": "unauthorized_block",
+                        "detail": "officer has no assigned block"}), 403
+
     conn = portal.get_db()
     cur = conn.cursor()
-    cur.execute("SELECT status, count(*) FROM applications GROUP BY status")
+    cur.execute("SELECT status, count(*) FROM applications WHERE block = %s GROUP BY status",
+                (assigned_block,))
     by_status = dict(cur.fetchall())
     cur.execute("SELECT count(*) FROM applications WHERE status = 'PENDING' "
-                "AND submitted_at < %s",
-                (portal.now_ist() - timedelta(days=portal.SLA_DAYS),))
+                "AND block = %s AND submitted_at < %s",
+                (assigned_block, portal.now_ist() - timedelta(days=portal.SLA_DAYS)))
     overdue = cur.fetchone()[0]
     cur.execute("SELECT block, count(*) FROM applications WHERE status = 'PENDING' "
-                "GROUP BY block ORDER BY count(*) DESC")
+                "AND block = %s GROUP BY block", (assigned_block,))
     by_block = cur.fetchall()
     cur.close(); conn.close()
-    return jsonify({"officer": _subject_value(claims, "officer"),
-                    "by_status": by_status, "overdue_pending": overdue,
-                    "pending_by_block": [{"block": b, "count": c} for b, c in by_block],
-                    "sla_days": portal.SLA_DAYS})
+    return jsonify({
+        "officer": officer_user,
+        "assigned_block": assigned_block,
+        "by_status": by_status,
+        "overdue_pending": overdue,
+        "pending_by_block": [{"block": b, "count": c} for b, c in by_block],
+        "sla_days": portal.SLA_DAYS
+    })
 
 
 @api.get("/api/officer/applications")
@@ -494,34 +631,51 @@ def officer_list():
     claims, err = _authenticate("officer")
     if err:
         return err
+    officer_user = _subject_value(claims, "officer")
+    assigned_block = _get_officer_block(officer_user)
+    if not assigned_block:
+        return jsonify({"error": "unauthorized_block",
+                        "detail": "officer has no assigned block"}), 403
+
     status = request.args.get("status", "PENDING")
     mobile = request.args.get("mobile", "").strip()
-    block = request.args.get("block", "").strip()
+    caller_block = request.args.get("block", "").strip()
+
+    # If caller specifies a block that differs from assigned block, reject
+    if caller_block and caller_block.lower() != assigned_block.lower():
+        return jsonify({"error": "cross_block_denied",
+                        "detail": "access denied: you are not authorized for block %s" % caller_block}), 403
+
     try:
         page = max(1, int(request.args.get("page", 1)))
     except ValueError:
         page = 1
+
     q = ("SELECT id, application_no, applicant_name, mobile, village, block, status, "
-         "submitted_at FROM applications WHERE 1=1")
-    params = []
+         "submitted_at FROM applications WHERE block = %s")
+    params = [assigned_block]
     if mobile:
         q += " AND mobile = %s"; params.append(mobile)
     if status and status != "ALL":
         q += " AND status = %s"; params.append(status)
-    if block:
-        q += " AND block = %s"; params.append(block)
     q += " ORDER BY submitted_at ASC LIMIT 50 OFFSET %s"
     params.append((page - 1) * 50)
+
     conn = portal.get_db()
     cur = conn.cursor()
     cur.execute(q, params)
     rows = cur.fetchall()
     cur.close(); conn.close()
-    return jsonify({"page": page, "status": status,
-                    "applications": [{"id": r[0], "application_no": r[1],
-                                      "applicant_name": r[2], "mobile": r[3],
-                                      "village": r[4], "block": r[5], "status": r[6],
-                                      "submitted_at": str(r[7])} for r in rows]})
+    return jsonify({
+        "officer": officer_user,
+        "assigned_block": assigned_block,
+        "page": page,
+        "status": status,
+        "applications": [{"id": r[0], "application_no": r[1],
+                          "applicant_name": r[2], "mobile": r[3],
+                          "village": r[4], "block": r[5], "status": r[6],
+                          "submitted_at": str(r[7])} for r in rows]
+    })
 
 
 def _find_application(cur, ref):
@@ -544,17 +698,31 @@ def officer_application(ref):
     claims, err = _authenticate("officer")
     if err:
         return err
+    officer_user = _subject_value(claims, "officer")
+    assigned_block = _get_officer_block(officer_user)
+    if not assigned_block:
+        return jsonify({"error": "unauthorized_block",
+                        "detail": "officer has no assigned block"}), 403
+
     conn = portal.get_db()
     cur = conn.cursor()
     row = _find_application(cur, ref)
-    audit = []
-    if row:
-        cur.execute("SELECT at, action, actor, note FROM audit_log "
-                    "WHERE application_id = %s ORDER BY at ASC", (row[0],))
-        audit = cur.fetchall()
-    cur.close(); conn.close()
     if not row:
+        cur.close(); conn.close()
         return jsonify({"error": "not_found"}), 404
+
+    # Verify block authorization (row[9] is block)
+    app_block = row[9]
+    if app_block != assigned_block:
+        cur.close(); conn.close()
+        return jsonify({"error": "cross_block_denied",
+                        "detail": "access denied: application belongs to another block"}), 403
+
+    cur.execute("SELECT at, action, actor, note FROM audit_log "
+                "WHERE application_id = %s ORDER BY at ASC", (row[0],))
+    audit = cur.fetchall()
+    cur.close(); conn.close()
+
     keys = ["id", "application_no", "applicant_name", "mobile", "dob", "gender",
             "marital_status", "husband_name", "village", "block", "bank_account",
             "ifsc", "doc_path", "status", "submitted_at", "decided_at", "decided_by"]
@@ -574,6 +742,11 @@ def officer_decide():
     if err:
         return err
     officer_user = _subject_value(claims, "officer")
+    assigned_block = _get_officer_block(officer_user)
+    if not assigned_block:
+        return jsonify({"error": "unauthorized_block",
+                        "detail": "officer has no assigned block"}), 403
+
     data = request.get_json(silent=True) or {}
     ref = data.get("application_no") or data.get("id")
     decision = (data.get("decision") or "").strip().upper()
@@ -585,23 +758,43 @@ def officer_decide():
         return jsonify({"error": "reason_required",
                         "detail": "the Director requires a reason recorded against "
                                   "the officer's name for every decision"}), 422
+
     conn = portal.get_db()
     cur = conn.cursor()
     row = _find_application(cur, ref)
     if not row:
         cur.close(); conn.close()
         return jsonify({"error": "not_found"}), 404
-    cur.execute("UPDATE applications SET status = %s, decided_at = %s, decided_by = %s "
-                "WHERE id = %s AND status = 'PENDING' RETURNING application_no",
-                (decision, portal.now_ist(), officer_user, row[0]))
-    upd = cur.fetchone()
-    if upd:
-        portal.write_audit(cur, row[0], decision, "officer:%s" % officer_user, note)
-        conn.commit()
-    cur.close(); conn.close()
-    if not upd:
+
+    # Verify application belongs to officer's assigned block
+    app_block = row[9]
+    if app_block != assigned_block:
+        cur.close(); conn.close()
+        return jsonify({"error": "cross_block_denied",
+                        "detail": "access denied: cannot decide application outside your assigned block"}), 403
+
+    # Check status is PENDING (cannot decide already decided or deemed approved)
+    if row[13] != "PENDING":
+        cur.close(); conn.close()
         return jsonify({"error": "not_pending",
                         "detail": "only a PENDING application can be decided; "
                                   "current status is %s" % row[13]}), 409
+
+    # Concurrency safe atomic update with status and block guards
+    cur.execute("UPDATE applications SET status = %s, decided_at = %s, decided_by = %s "
+                "WHERE id = %s AND status = 'PENDING' AND block = %s RETURNING application_no",
+                (decision, portal.now_ist(), officer_user, row[0], assigned_block))
+    upd = cur.fetchone()
+    if upd:
+        portal.write_audit(cur, row[0], decision, "officer:%s" % officer_user,
+                           "Block: %s; Reason: %s" % (assigned_block, note))
+        conn.commit()
+    cur.close(); conn.close()
+
+    if not upd:
+        return jsonify({"error": "decision_conflict",
+                        "detail": "application was already decided or status changed concurrently"}), 409
+
     return jsonify({"application_no": upd[0], "status": decision,
-                    "decided_by": officer_user, "reason": note})
+                    "decided_by": officer_user, "block": assigned_block, "reason": note})
+

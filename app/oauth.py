@@ -386,14 +386,32 @@ def login():
                     _update_request(rid, pending_mobile=mobile)
                     req["pending_mobile"] = mobile
         else:
-            if (portal.ADMIN_PASSWORD and request.form.get("username") == portal.ADMIN_USERNAME and
-                    request.form.get("password") == portal.ADMIN_PASSWORD):
-                _update_request(rid, subject="officer:" + portal.ADMIN_USERNAME)
+            username = (request.form.get("username") or "").strip()
+            password = request.form.get("password") or ""
+            allowed_officers = {"admin", "officer_sonari", "officer_namti"}
+            env_blocks = os.environ.get("OFFICER_BLOCK_MAPPINGS")
+            if env_blocks:
+                try:
+                    allowed_officers.update(json.loads(env_blocks).keys())
+                except Exception:
+                    pass
+            try:
+                conn = portal.get_db()
+                cur = conn.cursor()
+                cur.execute("SELECT username FROM officer_blocks")
+                allowed_officers.update(r[0] for r in cur.fetchall())
+                cur.close(); conn.close()
+            except Exception:
+                pass
+
+            if portal.ADMIN_PASSWORD and username in allowed_officers and password == portal.ADMIN_PASSWORD:
+                _update_request(rid, subject="officer:" + username)
                 return redirect(url_for("oauth.consent", rid=rid))
             flash("Invalid credentials.")
     return render_template("oauth_login.html", rid=rid, role=role,
                            client_name=req["params"]["client_name"],
                            pending_mobile=req["pending_mobile"])
+
 
 
 @oauth.route("/oauth/consent", methods=["GET", "POST"])

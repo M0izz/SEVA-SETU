@@ -479,10 +479,16 @@ async def main():
     print("  Overall pass rate        : %.1f%%" % pass_pct)
     print("=" * 72)
 
+    mode = assistant_mode()
+    is_live = (mode == "llm")
     results = {
         "run_id": "run-" + uuid.uuid4().hex[:8],
         "run_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S IST"),
-        "assistant_mode": assistant_mode(),
+        "assistant_mode": "live_llm" if is_live else "scripted_regression",
+        "mode_label": "Live LLM Model Evaluation" if is_live else "Scripted MCP Regression Suite (Deterministic Tool Replay)",
+        "is_live_llm": is_live,
+        "llm_verified": is_live,
+        "llm_model": os.environ.get("LLM_MODEL") if is_live else "None (Deterministic Replay)",
         "citizen_endpoint": CITIZEN_URL,
         "officer_endpoint": OFFICER_URL,
         "summary": {
@@ -501,6 +507,7 @@ async def main():
         ]
     }
 
+
     def _mask_pii(text):
         if not isinstance(text, str):
             return text
@@ -510,7 +517,10 @@ async def main():
             return v[:2] + "XXXXXX" + v[-4:] if 9 <= len(v) <= 18 else v
         text = re.sub(r"\b\d{9,18}\b", _mbank, text)
         text = re.sub(r"(?i)\b(otp\s*(?:is|:|=)\s*)(\d{6})\b", r"\1XXXXXX", text)
+        text = re.sub(r"ey[A-Za-z0-9_-]{10,}\.ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}", "[REDACTED_JWT_TOKEN]", text)
+        text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/-]{15,}", r"\1[REDACTED_TOKEN]", text)
         return text
+
 
     def _sanitize(o):
         if isinstance(o, dict):
