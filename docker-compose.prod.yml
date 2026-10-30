@@ -1,0 +1,133 @@
+# Production Docker Compose Configuration for Seva Setu
+# Usage: docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  db:
+    restart: always
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sewasetu}
+      POSTGRES_USER: ${POSTGRES_USER:-sewasetu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password must be set}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sewasetu}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./app/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./seed/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+      - ./app/migrations/001_active_unique.sql:/docker-entrypoint-initdb.d/03-migration-001.sql
+      - ./app/migrations/002_officer_blocks.sql:/docker-entrypoint-initdb.d/04-migration-002.sql
+    # PostgreSQL is NOT exposed to the host/public network; internal network only
+    networks:
+      - internal_net
+
+  app:
+    restart: always
+    build: ./app
+    environment:
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Admin password must be set}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?Public domain URL must be set, e.g. https://sewasetu.example.com}
+      SECRET_KEY: ${SECRET_KEY:?Flask secret key must be set}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-sewasetu}
+      POSTGRES_USER: ${POSTGRES_USER:-sewasetu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password must be set}
+      OFFICER_BLOCK_MAPPINGS: ${OFFICER_BLOCK_MAPPINGS:-{"admin":"Sonari","officer_sonari":"Sonari","officer_namti":"Namti"}}
+    depends_on:
+      db:
+        condition: service_healthy
+      smsgw:
+        condition: service_started
+    volumes:
+      - uploads:/var/sewasetu/uploads
+      - applogs:/var/log/sewasetu
+      - ./evals:/app/evals:ro
+    networks:
+      - internal_net
+
+  scheduler:
+    restart: always
+    build: ./app
+    command: ["sh", "-c", "until python /app/scripts/deemed_approval.py; do sleep 5; done; exec cron -f"]
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-sewasetu}
+      POSTGRES_USER: ${POSTGRES_USER:-sewasetu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password must be set}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - applogs:/var/log/sewasetu
+    networks:
+      - internal_net
+
+  smsgw:
+    restart: always
+    build: ./smsgw
+    expose:
+      - "8025"
+    networks:
+      - internal_net
+
+  mcp-citizen:
+    restart: always
+    build: ./mcp
+    command: ["python", "mcp_citizen.py"]
+    environment:
+      MCP_PORT: "8001"
+      PORTAL_URL: http://app:8000
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?Public domain URL must be set}
+    depends_on:
+      - app
+    networks:
+      - internal_net
+
+  mcp-officer:
+    restart: always
+    build: ./mcp
+    command: ["python", "mcp_officer.py"]
+    environment:
+      MCP_PORT: "8002"
+      PORTAL_URL: http://app:8000
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?Public domain URL must be set}
+    depends_on:
+      - app
+    networks:
+      - internal_net
+
+  caddy:
+    restart: always
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${PUBLIC_BASE_URL:?Public domain URL must be set}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+      - mcp-citizen
+      - mcp-officer
+    networks:
+      - internal_net
+
+volumes:
+  pgdata:
+  uploads:
+  applogs:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal_net:
+    driver: bridge
